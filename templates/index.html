@@ -95,11 +95,11 @@
                     <div class="form-grid">
                         <div class="form-row">
                             <label>臂架长度 (m):</label>
-                            <input type="number" name="arm_length" step="0.000001" required>
+                            <input type="number" name="arm_length" step="0.000001">
                         </div>
                         <div class="form-row">
                             <label>伸缩距离 (m):</label>
-                            <input type="number" name="stretch_dist" step="0.000001" required>
+                            <input type="number" name="stretch_dist" step="0.000001">
                         </div>
                     </div>
                 </div>
@@ -110,7 +110,7 @@
                     <div class="form-grid">
                         <div class="form-row">
                             <label>连接点距离 (m):</label>
-                            <input type="number" name="connect_dist" step="0.000001" required>
+                            <input type="number" name="connect_dist" step="0.000001">
                         </div>
                     </div>
                 </div>
@@ -157,6 +157,25 @@
 
             // 连接点参数：仅溜筒坐标系时显示
             connectParams.style.display = (coordSystem === 'chute') ? 'block' : 'none';
+
+            // 动态管理 required 属性
+            const armLength = document.querySelector('input[name="arm_length"]');
+            const stretchDist = document.querySelector('input[name="stretch_dist"]');
+            const connectDist = document.querySelector('input[name="connect_dist"]');
+
+            if (coordSystem === 'arm' || coordSystem === 'chute') {
+                armLength.required = true;
+                stretchDist.required = true;
+            } else {
+                armLength.required = false;
+                stretchDist.required = false;
+            }
+
+            if (coordSystem === 'chute') {
+                connectDist.required = true;
+            } else {
+                connectDist.required = false;
+            }
         }
 
         // 页面加载时初始化
