@@ -65,7 +65,6 @@ def calculate():
                 float(request.form.get('rot_center_y', 0)),
                 float(request.form.get('rot_center_z', 0))
             ]),
-            'walking_dist': float(request.form.get('walking_dist', 0)),
             'arm_length': float(request.form.get('arm_length', 25.3)),
             'stretch_dist': float(request.form.get('stretch_dist', 0)),
             'arm_to_connect_point_dist': float(request.form.get('connect_dist', 0))

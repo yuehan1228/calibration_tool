@@ -44,7 +44,6 @@ def test_full_pipeline():
             'slewing_angle': 0.0,
             'luffing_angle': 0.0,
             'rot_center': np.array([0.0, 0.0, 0.0]),
-            'walking_dist': 0.0,
             'arm_length': 25.3,
             'stretch_dist': 0.0,
             'arm_to_connect_point_dist': 3.456

@@ -56,7 +56,6 @@ def test_transform_to_rot_center():
         'slewing_angle': 45.0,  # 回转角
         'luffing_angle': 10.0,  # 俯仰角
         'rot_center': np.array([5.0, 10.0, 3.0]),
-        'walking_dist': 10.0  # 行走距离
     }
 
     result = transform_to_rot_center(gnss_points, params)
@@ -77,7 +76,6 @@ def test_transform_to_rot_center_simple():
         'slewing_angle': 0.0,
         'luffing_angle': 0.0,
         'rot_center': np.array([0.0, 0.0, 0.0]),
-        'walking_dist': 0.0
     }
 
     result = transform_to_rot_center(gnss_points, params)
@@ -98,7 +96,6 @@ def test_transform_to_arm():
         'slewing_angle': 45.0,
         'luffing_angle': 10.0,
         'rot_center': np.array([5.0, 10.0, 3.0]),
-        'walking_dist': 10.0,
         'arm_length': 25.3,
         'stretch_dist': 2.0
     }
@@ -119,7 +116,6 @@ def test_transform_to_arm_default():
         'slewing_angle': 0.0,
         'luffing_angle': 0.0,
         'rot_center': np.array([0.0, 0.0, 0.0]),
-        'walking_dist': 0.0,
         # 不提供 arm_length 和 stretch_dist，使用默认值
     }
 
@@ -140,7 +136,6 @@ def test_transform_to_chute():
         'slewing_angle': 45.0,
         'luffing_angle': 10.0,
         'rot_center': np.array([5.0, 10.0, 3.0]),
-        'walking_dist': 10.0,
         'arm_length': 25.3,
         'stretch_dist': 2.0,
         'arm_to_connect_point_dist': 3.456
@@ -162,7 +157,6 @@ def test_transform_to_chute_default():
         'slewing_angle': 0.0,
         'luffing_angle': 0.0,
         'rot_center': np.array([0.0, 0.0, 0.0]),
-        'walking_dist': 0.0,
         # 使用默认参数
     }
 
@@ -182,7 +176,6 @@ def test_transform_consistency():
         'slewing_angle': 30.0,
         'luffing_angle': 15.0,
         'rot_center': np.array([10.0, 20.0, 5.0]),
-        'walking_dist': 5.0,
         'arm_length': 25.3,
         'stretch_dist': 1.5,
         'arm_to_connect_point_dist': 3.456
@@ -212,7 +205,6 @@ def test_transform_multiple_points():
         'slewing_angle': 45.0,
         'luffing_angle': 30.0,
         'rot_center': np.array([0.0, 0.0, 0.0]),
-        'walking_dist': 0.0
     }
 
     result = transform_to_rot_center(gnss_points, params)

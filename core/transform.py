@@ -43,7 +43,6 @@ def transform_to_rot_center(gnss_points, params):
             - slewing_angle: 回转角（度）
             - luffing_angle: 俯仰角（度）
             - rot_center: 旋转中心坐标，[x, y, z]
-            - walking_dist: 行走距离（米）
 
     Returns:
         transformed_points: 变换后的坐标，(N, 3) numpy 数组
@@ -51,7 +50,6 @@ def transform_to_rot_center(gnss_points, params):
     theta = np.deg2rad(params['slewing_angle'] + 90.0)
     phi = np.deg2rad(params['luffing_angle'])
     rot_center = params['rot_center']
-    walking_dist = params.get('walking_dist', 0.0)
 
     # 1. 平移到旋转中心
     T_rot_center = np.eye(4)
@@ -76,12 +74,8 @@ def transform_to_rot_center(gnss_points, params):
     R_luff = np.eye(4)
     R_luff[:3, :3] = R_luff3
 
-    # 4. 行走距离平移
-    T_walk = np.eye(4)
-    T_walk[1, 3] = walking_dist
-
     # 组合变换
-    T = R_luff @ R_slew @ T_rot_center @ T_walk
+    T = T_rot_center @ R_slew @ R_luff
     T_inv = np.linalg.inv(T)
 
     # 应用变换
@@ -102,7 +96,6 @@ def transform_to_arm(gnss_points, params):
             - slewing_angle: 回转角（度）
             - luffing_angle: 俯仰角（度）
             - rot_center: 旋转中心坐标
-            - walking_dist: 行走距离（米）
             - arm_length: 臂架长度
             - stretch_dist: 伸缩距离
 
@@ -112,7 +105,6 @@ def transform_to_arm(gnss_points, params):
     theta = np.deg2rad(params['slewing_angle'] + 90.0)
     phi = np.deg2rad(params['luffing_angle'])
     rot_center = params['rot_center']
-    walking_dist = params.get('walking_dist', 0.0)
     arm_length = params.get('arm_length', 25.3)
     stretch_dist = params.get('stretch_dist', 0.0)
 
@@ -143,12 +135,8 @@ def transform_to_arm(gnss_points, params):
     T_arm = np.eye(4)
     T_arm[1, 3] = arm_length + stretch_dist
 
-    # 5. 行走距离平移
-    T_walk = np.eye(4)
-    T_walk[1, 3] = walking_dist
-
     # 组合变换
-    T = T_arm @ R_luff @ R_slew @ T_rot_center @ T_walk
+    T = T_rot_center @ R_slew @ R_luff @ T_arm
     T_inv = np.linalg.inv(T)
 
     # 应用变换
@@ -169,7 +157,6 @@ def transform_to_chute(gnss_points, params):
             - slewing_angle: 回转角（度）
             - luffing_angle: 俯仰角（度）
             - rot_center: 旋转中心坐标
-            - walking_dist: 行走距离（米）
             - arm_length: 臂架长度
             - stretch_dist: 伸缩距离
             - arm_to_connect_point_dist: 连接点距离
@@ -180,7 +167,6 @@ def transform_to_chute(gnss_points, params):
     theta = np.deg2rad(params['slewing_angle'] + 90.0)
     phi = np.deg2rad(params['luffing_angle'])
     rot_center = params['rot_center']
-    walking_dist = params.get('walking_dist', 0.0)
     arm_length = params.get('arm_length', 25.3)
     stretch_dist = params.get('stretch_dist', 0.0)
     connect_dist = params.get('arm_to_connect_point_dist', 0.0)
@@ -216,12 +202,8 @@ def transform_to_chute(gnss_points, params):
     T_connect = np.eye(4)
     T_connect[2, 3] = -connect_dist
 
-    # 6. 行走距离平移
-    T_walk = np.eye(4)
-    T_walk[1, 3] = walking_dist
-
     # 组合变换
-    T = T_connect @ T_arm @ R_luff @ R_slew @ T_rot_center @ T_walk
+    T = T_rot_center @ R_slew @ R_luff @ T_arm @ T_connect  
     T_inv = np.linalg.inv(T)
 
     # 应用变换
