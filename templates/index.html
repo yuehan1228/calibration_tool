@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雷达自动标定工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>雷达自动标定工具</h1>
+
+        <form id="calibForm" enctype="multipart/form-data">
+            <!-- 文件上传 -->
+            <section class="section">
+                <h2>文件上传</h2>
+                <div class="form-row">
+                    <label>GNSS 坐标文件:</label>
+                    <input type="file" name="gnss_file" accept=".csv,.txt" required>
+                </div>
+                <div class="form-row">
+                    <label>雷达坐标文件:</label>
+                    <input type="file" name="radar_file" accept=".csv,.txt" required>
+                </div>
+            </section>
+
+            <!-- 传感器配置 -->
+            <section class="section">
+                <h2>传感器配置</h2>
+                <div class="form-row">
+                    <label>目标坐标系:</label>
+                    <select name="coord_system" id="coord_system">
+                        <option value="rot_center">旋转中心坐标系</option>
+                        <option value="arm">臂架坐标系</option>
+                        <option value="chute">溜筒坐标系</option>
+                    </select>
+                </div>
+            </section>
+
+            <!-- 姿态参数 -->
+            <section class="section">
+                <h2>大机姿态参数</h2>
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>回转角 (°):</label>
+                        <input type="number" name="slewing_angle" step="0.001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>俯仰角 (°):</label>
+                        <input type="number" name="luffing_angle" step="0.001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>行走距离 (m):</label>
+                        <input type="number" name="walking_dist" step="0.001" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>伸缩距离 (m):</label>
+                        <input type="number" name="stretch_dist" step="0.001" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>臂架长度 (m):</label>
+                        <input type="number" name="arm_length" step="0.001" value="25.3">
+                    </div>
+                </div>
+
+                <h3>旋转中心坐标</h3>
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>X (m):</label>
+                        <input type="number" name="rot_center_x" step="0.001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>Y (m):</label>
+                        <input type="number" name="rot_center_y" step="0.001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>Z (m):</label>
+                        <input type="number" name="rot_center_z" step="0.001" required>
+                    </div>
+                </div>
+
+                <div id="connect_dist_row" class="form-row" style="display: none;">
+                    <label>连接点距离 (m):</label>
+                    <input type="number" name="connect_dist" step="0.001" value="0">
+                </div>
+            </section>
+
+            <button type="submit" class="btn-calculate">计算</button>
+        </form>
+
+        <!-- 结果展示 -->
+        <section class="section" id="result_section" style="display: none;">
+            <h2>计算结果</h2>
+
+            <h3>标定矩阵 T_fixed</h3>
+            <div class="matrix-display" id="matrix_result"></div>
+
+            <h3>变换误差</h3>
+            <div class="error-summary" id="error_summary"></div>
+            <div class="error-details" id="error_details"></div>
+        </section>
+
+        <div id="error_message" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script>
+        // 坐标系切换时显示/隐藏连接点距离
+        document.getElementById('coord_system').addEventListener('change', function() {
+            const connectDistRow = document.getElementById('connect_dist_row');
+            connectDistRow.style.display = this.value === 'chute' ? 'block' : 'none';
+        });
+
+        // 表单提交
+        document.getElementById('calibForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+
+            try {
+                const response = await fetch('/calculate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                } else if (data.success) {
+                    showResult(data);
+                }
+            } catch (err) {
+                showError('请求失败: ' + err.message);
+            }
+        });
+
+        function showError(message) {
+            document.getElementById('error_message').textContent = message;
+            document.getElementById('error_message').style.display = 'block';
+            document.getElementById('result_section').style.display = 'none';
+        }
+
+        function showResult(data) {
+            document.getElementById('error_message').style.display = 'none';
+            document.getElementById('result_section').style.display = 'block';
+
+            // 显示矩阵
+            const matrix = data.matrix;
+            let matrixHtml = '<table class="matrix-table">';
+            for (let i = 0; i < 4; i++) {
+                matrixHtml += '<tr>';
+                for (let j = 0; j < 4; j++) {
+                    matrixHtml += `<td>${matrix[i][j].toFixed(6)}</td>`;
+                }
+                matrixHtml += '</tr>';
+            }
+            matrixHtml += '</table>';
+            document.getElementById('matrix_result').innerHTML = matrixHtml;
+
+            // 显示误差汇总
+            document.getElementById('error_summary').innerHTML =
+                `平均误差: ${data.mean_error.toFixed(4)} m | 最大误差: ${data.max_error.toFixed(4)} m`;
+
+            // 显示详细误差
+            let errorHtml = '<table class="error-table"><tr><th>点号</th><th>误差 (m)</th></tr>';
+            data.errors.forEach((err, idx) => {
+                errorHtml += `<tr><td>点 ${idx + 1}</td><td>${err.toFixed(6)}</td></tr>`;
+            });
+            errorHtml += '</table>';
+            document.getElementById('error_details').innerHTML = errorHtml;
+        }
+    </script>
+</body>
+</html>
