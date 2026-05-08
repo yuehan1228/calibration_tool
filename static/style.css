@@ -121,3 +121,42 @@ h3 {
     border-radius: 4px;
     margin-top: 15px;
 }
+
+.hint {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.matrix-input {
+    overflow-x: auto;
+}
+
+.matrix-input-table {
+    border-collapse: collapse;
+    margin: 0 auto;
+}
+
+.matrix-input-table td {
+    padding: 5px;
+}
+
+.matrix-input-table input[type="number"] {
+    width: 100px;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: monospace;
+    text-align: center;
+}
+
+.matrix-input-table input[type="number"]:focus {
+    border-color: #007bff;
+    outline: none;
+}
+
+.matrix-input-table input[readonly] {
+    background-color: #f5f5f5;
+    color: #999;
+}

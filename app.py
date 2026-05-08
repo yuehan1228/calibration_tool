@@ -3,7 +3,7 @@ import os
 import numpy as np
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
-from core.parser import parse_coordinate_file
+from core.parser import parse_coordinate_file, parse_wgs84_file
 from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute
 from core.solver import estimate_rigid_transform, compute_error
 
@@ -20,6 +20,26 @@ ALLOWED_EXTENSIONS = {'csv', 'txt'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def transform_wgs84_to_local(wgs84_points, transform_matrix):
+    """
+    将WGS84坐标转换为局部坐标系
+
+    Args:
+        wgs84_points: Nx3数组，列为 [lon, lat, height]
+        transform_matrix: 4x4齐次变换矩阵
+
+    Returns:
+        local_points: Nx3数组，局部坐标
+    """
+    n = wgs84_points.shape[0]
+    # 转换为齐次坐标
+    points_h = np.hstack([wgs84_points, np.ones((n, 1))]).T  # 4xN
+    # 应用变换矩阵
+    local_h = transform_matrix @ points_h  # 4xN
+    # 返回xyz坐标
+    return local_h[:3, :].T  # Nx3
 
 
 @app.route('/')
@@ -49,9 +69,29 @@ def calculate():
         gnss_file.save(gnss_path)
         radar_file.save(radar_path)
 
-        # 解析坐标
-        gnss_points = parse_coordinate_file(gnss_path)
+        # 解析雷达坐标
         radar_points = parse_coordinate_file(radar_path)
+
+        # 解析GNSS坐标（根据格式）
+        gnss_format = request.form.get('gnss_format', 'local')
+
+        if gnss_format == 'wgs84':
+            # 解析经纬度数据
+            wgs84_points = parse_wgs84_file(gnss_path)
+
+            # 获取转换矩阵
+            transform_matrix = np.array([
+                [float(request.form.get('m00', 1)), float(request.form.get('m01', 0)), float(request.form.get('m02', 0)), float(request.form.get('m03', 0))],
+                [float(request.form.get('m10', 0)), float(request.form.get('m11', 1)), float(request.form.get('m12', 0)), float(request.form.get('m13', 0))],
+                [float(request.form.get('m20', 0)), float(request.form.get('m21', 0)), float(request.form.get('m22', 1)), float(request.form.get('m23', 0))],
+                [float(request.form.get('m30', 0)), float(request.form.get('m31', 0)), float(request.form.get('m32', 0)), float(request.form.get('m33', 1))]
+            ])
+
+            # 转换到局部坐标系
+            gnss_points = transform_wgs84_to_local(wgs84_points, transform_matrix)
+        else:
+            # 直接解析局部坐标
+            gnss_points = parse_coordinate_file(gnss_path)
 
         if gnss_points.shape != radar_points.shape:
             return jsonify({'error': f'点数不匹配: GNSS {gnss_points.shape[0]}, 雷达 {radar_points.shape[0]}'})

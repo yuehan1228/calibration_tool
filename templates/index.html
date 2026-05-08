@@ -15,12 +15,53 @@
             <section class="section">
                 <h2>文件上传</h2>
                 <div class="form-row">
+                    <label>GNSS 数据格式:</label>
+                    <select name="gnss_format" id="gnss_format">
+                        <option value="local">局部坐标 (x, y, z)</option>
+                        <option value="wgs84">经纬度 (lon, lat, height)</option>
+                    </select>
+                </div>
+                <div class="form-row">
                     <label>GNSS 坐标文件:</label>
                     <input type="file" name="gnss_file" accept=".csv,.txt" required>
                 </div>
                 <div class="form-row">
                     <label>雷达坐标文件:</label>
                     <input type="file" name="radar_file" accept=".csv,.txt" required>
+                </div>
+            </section>
+
+            <!-- WGS84转换矩阵 -->
+            <section class="section" id="transform_matrix_section" style="display: none;">
+                <h2>WGS84 到泊位坐标系转换矩阵</h2>
+                <p class="hint">输入4x4齐次变换矩阵，将经纬度坐标转换为泊位局部坐标</p>
+                <div class="matrix-input">
+                    <table class="matrix-input-table">
+                        <tr>
+                            <td><input type="number" name="m00" step="0.000001" value="1"></td>
+                            <td><input type="number" name="m01" step="0.000001" value="0"></td>
+                            <td><input type="number" name="m02" step="0.000001" value="0"></td>
+                            <td><input type="number" name="m03" step="0.000001" value="0"></td>
+                        </tr>
+                        <tr>
+                            <td><input type="number" name="m10" step="0.000001" value="0"></td>
+                            <td><input type="number" name="m11" step="0.000001" value="1"></td>
+                            <td><input type="number" name="m12" step="0.000001" value="0"></td>
+                            <td><input type="number" name="m13" step="0.000001" value="0"></td>
+                        </tr>
+                        <tr>
+                            <td><input type="number" name="m20" step="0.000001" value="0"></td>
+                            <td><input type="number" name="m21" step="0.000001" value="0"></td>
+                            <td><input type="number" name="m22" step="0.000001" value="1"></td>
+                            <td><input type="number" name="m23" step="0.000001" value="0"></td>
+                        </tr>
+                        <tr>
+                            <td><input type="number" name="m30" step="0.000001" value="0" readonly></td>
+                            <td><input type="number" name="m31" step="0.000001" value="0" readonly></td>
+                            <td><input type="number" name="m32" step="0.000001" value="0" readonly></td>
+                            <td><input type="number" name="m33" step="0.000001" value="1" readonly></td>
+                        </tr>
+                    </table>
                 </div>
             </section>
 
@@ -115,10 +156,19 @@
     </div>
 
     <script>
-        // 坐标系切换时显示/隐藏相应参数
-        document.getElementById('coord_system').addEventListener('change', updateFormVisibility);
+        // GNSS格式切换
+        document.getElementById('gnss_format').addEventListener('change', updateGnssFormatVisibility);
 
-        function updateFormVisibility() {
+        function updateGnssFormatVisibility() {
+            const gnssFormat = document.getElementById('gnss_format').value;
+            const matrixSection = document.getElementById('transform_matrix_section');
+            matrixSection.style.display = (gnssFormat === 'wgs84') ? 'block' : 'none';
+        }
+
+        // 坐标系切换时显示/隐藏相应参数
+        document.getElementById('coord_system').addEventListener('change', updateCoordSystemVisibility);
+
+        function updateCoordSystemVisibility() {
             const coordSystem = document.getElementById('coord_system').value;
             const armParams = document.getElementById('arm_params');
             const connectParams = document.getElementById('connect_params');
@@ -131,7 +181,8 @@
         }
 
         // 页面加载时初始化
-        updateFormVisibility();
+        updateGnssFormatVisibility();
+        updateCoordSystemVisibility();
 
         // 表单提交
         document.getElementById('calibForm').addEventListener('submit', async function(e) {
