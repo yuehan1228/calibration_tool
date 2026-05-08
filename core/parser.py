@@ -14,7 +14,7 @@ def parse_coordinate_file(file_path):
         numpy.ndarray: Nx3 的坐标数组，列为 [x, y, z]
     """
     # 根据扩展名判断格式
-    if file_path.endswith('.csv'):
+    if file_path.lower().endswith('.csv'):
         df = pd.read_csv(file_path)
     else:  # TXT 文件，假设以空格或制表符分隔
         df = pd.read_csv(file_path, sep=r'\s+')
