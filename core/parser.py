@@ -31,7 +31,7 @@ def parse_wgs84_file(file_path):
         file_path: 文件路径
 
     Returns:
-        numpy.ndarray: Nx3 的坐标数组，列为 [lon, lat, height]
+        numpy.ndarray: Nx3 的坐标数组，列为 [B, L, H]（纬度、经度、高度）
     """
     # 根据扩展名判断格式
     if file_path.lower().endswith('.csv'):
@@ -39,32 +39,35 @@ def parse_wgs84_file(file_path):
     else:  # TXT 文件，假设以空格或制表符分隔
         df = pd.read_csv(file_path, sep=r'\s+')
 
-    # 尝试不同的列名组合
-    lon_names = ['lon', 'longitude', '经度', 'Lon', 'Longitude']
-    lat_names = ['lat', 'latitude', '纬度', 'Lat', 'Latitude']
-    height_names = ['height', 'h', 'alt', 'altitude', '高度', 'Height', 'H']
+    # 尝试不同的列名组合（纬度B）
+    b_names = ['B', 'b', 'lat', 'latitude', '纬度', 'Lat', 'Latitude']
+    # 经度L
+    l_names = ['L', 'l', 'lon', 'longitude', '经度', 'Lon', 'Longitude']
+    # 高度H
+    h_names = ['H', 'h', 'height', 'alt', 'altitude', '高度', 'Height']
 
     # 查找匹配的列名
-    lon_col = None
-    lat_col = None
-    height_col = None
+    b_col = None
+    l_col = None
+    h_col = None
 
-    for name in lon_names:
+    for name in b_names:
         if name in df.columns:
-            lon_col = name
+            b_col = name
             break
 
-    for name in lat_names:
+    for name in l_names:
         if name in df.columns:
-            lat_col = name
+            l_col = name
             break
 
-    for name in height_names:
+    for name in h_names:
         if name in df.columns:
-            height_col = name
+            h_col = name
             break
 
-    if lon_col is None or lat_col is None or height_col is None:
-        raise ValueError(f"无法识别经纬度列名。可用列: {list(df.columns)}")
+    if b_col is None or l_col is None or h_col is None:
+        raise ValueError(f"无法识别经纬度列名。可用列: {list(df.columns)}\n"
+                        f"支持的列名: B/lat/纬度, L/lon/经度, H/height/高度")
 
-    return df[[lon_col, lat_col, height_col]].values
+    return df[[b_col, l_col, h_col]].values
