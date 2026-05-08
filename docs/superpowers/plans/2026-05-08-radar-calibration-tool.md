@@ -1232,6 +1232,7 @@ h3 {
 
 ```bash
 mkdir -p /home/yh/project/calibration_tool/uploads
+touch /home/yh/project/calibration_tool/uploads/.gitkeep
 ```
 
 - [ ] **Step 5: 运行测试验证 Flask 应用**
