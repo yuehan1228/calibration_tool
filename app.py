@@ -7,6 +7,7 @@ from core.parser import parse_coordinate_file, parse_wgs84_file
 from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute
 from core.solver import estimate_rigid_transform, compute_error
 import math
+import ast
 
 WGS84_PI = math.pi
 WGS84_LongAxis = 6378137.0  # 地球椭球体的长半轴（单位：米）
@@ -25,6 +26,36 @@ ALLOWED_EXTENSIONS = {'csv', 'txt'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def parse_transform_matrix(matrix_str):
+    """
+    解析转换矩阵字符串
+
+    Args:
+        matrix_str: numpy格式的矩阵字符串，如:
+            [[ 6.73e-01 -3.69e-02  7.38e-01  1.40e+04]
+             [ 5.90e-01  6.27e-01 -5.07e-01 -9.53e+03]
+             [-4.44e-01  7.77e-01  4.44e-01 -6.37e+06]
+             [ 0.00e+00  0.00e+00  0.00e+00  1.00e+00]]
+
+    Returns:
+        4x4 numpy数组
+    """
+    if not matrix_str or matrix_str.strip() == '':
+        return np.eye(4)
+
+    try:
+        # 使用ast.literal_eval解析字符串
+        matrix_list = ast.literal_eval(matrix_str.strip())
+        matrix = np.array(matrix_list, dtype=float)
+
+        if matrix.shape != (4, 4):
+            raise ValueError(f"矩阵形状必须是4x4，当前是{matrix.shape}")
+
+        return matrix
+    except Exception as e:
+        raise ValueError(f"无法解析转换矩阵: {str(e)}\n请确保格式正确，例如:\n[[1 0 0 0]\n [0 1 0 0]\n [0 0 1 0]\n [0 0 0 1]]")
 
 
 def transform_blh_to_wgs84(B, L, H):
@@ -80,7 +111,7 @@ def transform_blh_array_to_wgs84(blh_points):
 
     for i in range(n):
         B, L, H = blh_points[i]
-        result = transform_blh_to_wgs84(B, L, H)
+        result = transform_blh_to_wgs84(B, L, H + 11.9)
         if result is None:
             raise ValueError(f"无效的经纬度数据（第{i+1}行）: B={B}, L={L}, H={H}")
         wgs84_points[i] = result
@@ -148,13 +179,9 @@ def calculate():
             # 步骤1: BLH -> WGS84直角坐标
             wgs84_points = transform_blh_array_to_wgs84(blh_points)
 
-            # 步骤2: 获取转换矩阵
-            transform_matrix = np.array([
-                [float(request.form.get('m00', 1)), float(request.form.get('m01', 0)), float(request.form.get('m02', 0)), float(request.form.get('m03', 0))],
-                [float(request.form.get('m10', 0)), float(request.form.get('m11', 1)), float(request.form.get('m12', 0)), float(request.form.get('m13', 0))],
-                [float(request.form.get('m20', 0)), float(request.form.get('m21', 0)), float(request.form.get('m22', 1)), float(request.form.get('m23', 0))],
-                [float(request.form.get('m30', 0)), float(request.form.get('m31', 0)), float(request.form.get('m32', 0)), float(request.form.get('m33', 1))]
-            ])
+            # 步骤2: 获取转换矩阵（从textarea解析）
+            matrix_str = request.form.get('transform_matrix', '')
+            transform_matrix = parse_transform_matrix(matrix_str)
 
             # 步骤3: WGS84直角坐标 -> 局部坐标系
             gnss_points = transform_wgs84_to_local(wgs84_points, transform_matrix)
