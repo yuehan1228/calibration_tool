@@ -251,7 +251,6 @@ def process_luffing_data(csv_path, ant_names, gnss_format='wgs84', T_inv=None, u
 
         ant_centers[ant] = {
             'center': [float(center_3d[0]), float(center_3d[1]), float(center_3d[2])],
-            # 'radius': float(radius),
             'normal': [float(normal[0]), float(normal[1]), float(normal[2])]
         }
         z_values.append(float(center_3d[2]))
