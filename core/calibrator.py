@@ -287,12 +287,12 @@ def compute_posture_params(slewing_path, luffing_path, xy_ant, z_ants,
             'luffing': {...}                   # 俯仰数据详情
         }
     """
-    T_inv = np.linalg.inv(T) if T is not None else None
+    # T_inv = np.linalg.inv(T) if T is not None else None
 
     slewing_result = process_slewing_data(
-        slewing_path, xy_ant, gnss_format, T_inv, undo)
+        slewing_path, xy_ant, gnss_format, T, undo)
     luffing_result = process_luffing_data(
-        luffing_path, z_ants, gnss_format, T_inv, undo)
+        luffing_path, z_ants, gnss_format, T, undo)
 
     return {
         'rot_center': {
