@@ -4,7 +4,7 @@ import numpy as np
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from core.parser import parse_coordinate_file, parse_wgs84_file
-from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute, parse_transform_matrix, transform_blh_array_to_wgs84, transform_wgs84_to_local
+from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute, parse_transform_matrix, transform_blh_array_to_ecef, transform_ecef_to_local
 from core.solver import estimate_rigid_transform, compute_error
 
 
@@ -68,15 +68,16 @@ def calculate():
             # 解析经纬度数据（BLH: 纬度、经度、高度）
             blh_points = parse_wgs84_file(gnss_path)
 
-            # 步骤1: BLH -> WGS84直角坐标
-            wgs84_points = transform_blh_array_to_wgs84(blh_points)
+            # 步骤1: BLH -> ECEF直角坐标
+            undo = get_float(request.form, 'undo', 11.9)
+            ecef_points = transform_blh_array_to_ecef(blh_points, undo)
 
             # 步骤2: 获取转换矩阵（从textarea解析）
             matrix_str = request.form.get('transform_matrix', '')
             transform_matrix = parse_transform_matrix(matrix_str)
 
             # 步骤3: WGS84直角坐标 -> 局部坐标系
-            gnss_points = transform_wgs84_to_local(wgs84_points, transform_matrix)
+            gnss_points = transform_ecef_to_local(ecef_points, transform_matrix)
         else:
             # 直接解析局部坐标
             gnss_points = parse_coordinate_file(gnss_path)

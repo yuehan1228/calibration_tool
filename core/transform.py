@@ -42,9 +42,9 @@ def parse_transform_matrix(matrix_str):
         raise ValueError(f"无法解析转换矩阵: {str(e)}\n请确保格式正确，例如:\n[[1 0 0 0]\n [0 1 0 0]\n [0 0 1 0]\n [0 0 0 1]]")
 
 
-def transform_blh_to_wgs84(B, L, H):
+def transform_blh_to_ecef(B, L, H):
     """
-    将经纬度坐标(B, L, H)转换为WGS84直角坐标(x, y, z)
+    将经纬度坐标(B, L, H)转换为ECEF直角坐标(x, y, z)
 
     Args:
         B: 纬度（度）
@@ -52,7 +52,7 @@ def transform_blh_to_wgs84(B, L, H):
         H: 高度（米）
 
     Returns:
-        (x, y, z): WGS84直角坐标（米），如果输入无效则返回None
+        (x, y, z): ECEF直角坐标（米），如果输入无效则返回None
     """
     if B > 90.0 or B < -90.0:
         return None
@@ -80,43 +80,44 @@ def transform_blh_to_wgs84(B, L, H):
     return x, y, z
 
 
-def transform_blh_array_to_wgs84(blh_points):
+def transform_blh_array_to_ecef(blh_points, undo=11.9):
     """
-    批量将经纬度坐标转换为WGS84直角坐标
+    批量将经纬度坐标转换为ECEF直角坐标
 
     Args:
         blh_points: Nx3数组，列为 [B, L, H]（纬度、经度、高度）
+        undo: 高程差（米），默认 11.9
 
     Returns:
-        wgs84_points: Nx3数组，列为 [x, y, z]
+        ecef_points: Nx3数组，列为 [x, y, z]
     """
     n = blh_points.shape[0]
-    wgs84_points = np.zeros((n, 3))
+    ecef_points = np.zeros((n, 3))
 
     for i in range(n):
         B, L, H = blh_points[i]
-        result = transform_blh_to_wgs84(B, L, H + 11.9)
+        result = transform_blh_to_ecef(B, L, H + undo)
         if result is None:
             raise ValueError(f"无效的经纬度数据（第{i+1}行）: B={B}, L={L}, H={H}")
-        wgs84_points[i] = result
+        ecef_points[i] = result
 
-    return wgs84_points
+    return ecef_points
 
 
-def transform_wgs84_to_local(wgs84_points, transform_matrix):
+def transform_ecef_to_local(ecef_points, transform_matrix):
     """
-    将WGS84直角坐标转换为局部坐标系
+    将ECEF直角坐标转换为局部坐标系
 
     Args:
-        wgs84_points: Nx3数组，列为 [x, y, z]
+        ecef_points: Nx3数组，列为 [x, y, z]
         transform_matrix: 4x4齐次变换矩阵
 
     Returns:
         local_points: Nx3数组，局部坐标
     """
-    n = wgs84_points.shape[0]
+    n = ecef_points.shape[0]
     # 转换为齐次坐标
-    points_h = np.hstack([wgs84_points, np.ones((n, 1))]).T  # 4xN
+    points_h = np.hstack([ecef_points, np.ones((n, 1))]).T  # 4xN
     # 应用变换矩阵
     local_h = transform_matrix @ points_h  # 4xN
     # 返回xyz坐标
