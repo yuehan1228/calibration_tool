@@ -44,7 +44,7 @@ def local_axis_setup_page():
 @app.route('/local_axis_setup/calculate', methods=['POST'])
 def local_axis_setup_calculate():
     try:
-        # 获取三个参考点的经纬度
+        # 获取四个参考点的经纬度
         P0_blh = (
             get_float(request.form, 'p0_b'),
             get_float(request.form, 'p0_l'),
@@ -55,6 +55,11 @@ def local_axis_setup_calculate():
             get_float(request.form, 'px_l'),
             get_float(request.form, 'px_h')
         )
+        Py_blh = (
+            get_float(request.form, 'py_b'),
+            get_float(request.form, 'py_l'),
+            get_float(request.form, 'py_h')
+        )
         Pz_blh = (
             get_float(request.form, 'pz_b'),
             get_float(request.form, 'pz_l'),
@@ -63,7 +68,7 @@ def local_axis_setup_calculate():
         undo = get_float(request.form, 'undo', 11.9)
 
         # 计算变换矩阵
-        matrix = compute_local_axis_matrix(P0_blh, Px_blh, Pz_blh, undo)
+        matrix = compute_local_axis_matrix(P0_blh, Px_blh, Py_blh, Pz_blh, undo)
 
         return jsonify({
             'success': True,

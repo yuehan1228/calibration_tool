@@ -202,19 +202,21 @@ def transform_to_rot_center(gnss_points, params):
     return transformed
 
 
-def compute_local_axis_matrix(P0_blh, Px_blh, Pz_blh, undo=11.9):
+def compute_local_axis_matrix(P0_blh, Px_blh, Py_blh, Pz_blh, undo=11.9):
     """
-    用三个参考点建立泊位局部坐标系，计算 WGS84 ECEF → 局部坐标的变换矩阵。
+    用四个参考点建立泊位局部坐标系，计算 WGS84 ECEF → 局部坐标的变换矩阵。
 
     算法:
-      - P0: 局部坐标系原点
-      - Px: 定义 Y 轴方向 (vec_y = Px - P0)
-      - Pz: 定义 Z 轴方向 (vec_z = Pz - P0)
+      - P0: 局部坐标系原点（平移分量）
+      - Px: 轴参考点，Y 和 Z 轴方向均以此点为基准
+      - Py: 定义 Y 轴方向 (vec_y = Py - Px)
+      - Pz: 定义 Z 轴方向 (vec_z = Pz - Px)
       - X 轴由 Y × Z 叉积导出，再正交化 Z = X × Y
 
     Args:
         P0_blh: (B, L, H) 原点经纬度
-        Px_blh: (B, L, H) Y轴方向点经纬度
+        Px_blh: (B, L, H) 轴参考点经纬度
+        Py_blh: (B, L, H) Y轴方向点经纬度
         Pz_blh: (B, L, H) Z轴方向点经纬度
         undo: 高程差（米），默认 11.9，会加到每个点的 H 上
 
@@ -224,14 +226,15 @@ def compute_local_axis_matrix(P0_blh, Px_blh, Pz_blh, undo=11.9):
     # BLH → ECEF
     P0 = np.array(transform_blh_to_ecef(P0_blh[0], P0_blh[1], P0_blh[2] + undo))
     Px = np.array(transform_blh_to_ecef(Px_blh[0], Px_blh[1], Px_blh[2] + undo))
+    Py = np.array(transform_blh_to_ecef(Py_blh[0], Py_blh[1], Py_blh[2] + undo))
     Pz = np.array(transform_blh_to_ecef(Pz_blh[0], Pz_blh[1], Pz_blh[2] + undo))
 
-    if P0 is None or Px is None or Pz is None:
+    if P0 is None or Px is None or Py is None or Pz is None:
         raise ValueError("无效的经纬度数据")
 
-    # 构建局部坐标系轴
-    vec_z = Pz - P0
-    vec_y = Px - P0
+    # 构建局部坐标系轴（以 Px 为参考点）
+    vec_z = Pz - Px
+    vec_y = Py - Px
     vec_x = np.cross(vec_y, vec_z)
     vec_z = np.cross(vec_x, vec_y)
 
