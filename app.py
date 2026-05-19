@@ -4,7 +4,7 @@ import numpy as np
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from core.parser import parse_coordinate_file, parse_wgs84_file
-from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute, parse_transform_matrix, transform_blh_array_to_ecef, transform_ecef_to_local
+from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute, parse_transform_matrix, transform_blh_array_to_ecef, transform_ecef_to_local, compute_local_axis_matrix
 from core.solver import estimate_rigid_transform, compute_error
 
 
@@ -34,6 +34,44 @@ def get_float(form, field_name, default=0.0):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/local_axis_setup')
+def local_axis_setup_page():
+    return render_template('local_axis_setup.html')
+
+
+@app.route('/local_axis_setup/calculate', methods=['POST'])
+def local_axis_setup_calculate():
+    try:
+        # 获取三个参考点的经纬度
+        P0_blh = (
+            get_float(request.form, 'p0_b'),
+            get_float(request.form, 'p0_l'),
+            get_float(request.form, 'p0_h')
+        )
+        Px_blh = (
+            get_float(request.form, 'px_b'),
+            get_float(request.form, 'px_l'),
+            get_float(request.form, 'px_h')
+        )
+        Pz_blh = (
+            get_float(request.form, 'pz_b'),
+            get_float(request.form, 'pz_l'),
+            get_float(request.form, 'pz_h')
+        )
+        undo = get_float(request.form, 'undo', 11.9)
+
+        # 计算变换矩阵
+        matrix = compute_local_axis_matrix(P0_blh, Px_blh, Pz_blh, undo)
+
+        return jsonify({
+            'success': True,
+            'matrix': matrix.tolist()
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 
 @app.route('/calculate', methods=['POST'])

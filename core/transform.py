@@ -202,6 +202,56 @@ def transform_to_rot_center(gnss_points, params):
     return transformed
 
 
+def compute_local_axis_matrix(P0_blh, Px_blh, Pz_blh, undo=11.9):
+    """
+    用三个参考点建立泊位局部坐标系，计算 WGS84 ECEF → 局部坐标的变换矩阵。
+
+    算法:
+      - P0: 局部坐标系原点
+      - Px: 定义 Y 轴方向 (vec_y = Px - P0)
+      - Pz: 定义 Z 轴方向 (vec_z = Pz - P0)
+      - X 轴由 Y × Z 叉积导出，再正交化 Z = X × Y
+
+    Args:
+        P0_blh: (B, L, H) 原点经纬度
+        Px_blh: (B, L, H) Y轴方向点经纬度
+        Pz_blh: (B, L, H) Z轴方向点经纬度
+        undo: 高程差（米），默认 11.9，会加到每个点的 H 上
+
+    Returns:
+        T_inv: 4x4 齐次变换矩阵 (WGS84 ECEF → 泊位局部坐标)
+    """
+    # BLH → ECEF
+    P0 = np.array(transform_blh_to_ecef(P0_blh[0], P0_blh[1], P0_blh[2] + undo))
+    Px = np.array(transform_blh_to_ecef(Px_blh[0], Px_blh[1], Px_blh[2] + undo))
+    Pz = np.array(transform_blh_to_ecef(Pz_blh[0], Pz_blh[1], Pz_blh[2] + undo))
+
+    if P0 is None or Px is None or Pz is None:
+        raise ValueError("无效的经纬度数据")
+
+    # 构建局部坐标系轴
+    vec_z = Pz - P0
+    vec_y = Px - P0
+    vec_x = np.cross(vec_y, vec_z)
+    vec_z = np.cross(vec_x, vec_y)
+
+    # 归一化
+    vec_x_norm = vec_x / np.linalg.norm(vec_x)
+    vec_y_norm = vec_y / np.linalg.norm(vec_y)
+    vec_z_norm = vec_z / np.linalg.norm(vec_z)
+
+    # 构建 WGS84 ECEF → 局部坐标的变换矩阵
+    T = np.array([
+        [vec_x_norm[0], vec_y_norm[0], vec_z_norm[0], P0[0]],
+        [vec_x_norm[1], vec_y_norm[1], vec_z_norm[1], P0[1]],
+        [vec_x_norm[2], vec_y_norm[2], vec_z_norm[2], P0[2]],
+        [0, 0, 0, 1]
+    ])
+
+    T_inv = np.linalg.inv(T)
+    return T_inv
+
+
 def transform_to_arm(gnss_points, params):
     """
     将 GNSS 点变换到臂架坐标系
@@ -261,6 +311,7 @@ def transform_to_arm(gnss_points, params):
     transformed = (T_inv @ gnss_h).T[:, :3]
 
     return transformed
+
 
 
 def transform_to_chute(gnss_points, params):

@@ -140,3 +140,45 @@ h3 {
     font-size: 13px;
     margin-bottom: 10px;
 }
+
+.nav-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 15px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 14px;
+}
+
+.nav-bar a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.nav-bar a:hover {
+    text-decoration: underline;
+}
+
+.nav-current {
+    color: #999;
+}
+
+.matrix-numpy {
+    margin-top: 15px;
+}
+
+.matrix-numpy pre {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 13px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.matrix-numpy h4 {
+    color: #555;
+    margin-bottom: 8px;
+}

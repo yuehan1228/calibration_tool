@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>泊位坐标系建立</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <nav class="nav-bar">
+            <a href="/">← 标定工具</a>
+            <span class="nav-current">泊位坐标系建立</span>
+        </nav>
+
+        <h1>泊位坐标系建立</h1>
+        <p class="hint">输入三个参考点的经纬度坐标，计算 WGS84 到泊位坐标系的 4×4 齐次变换矩阵。</p>
+
+        <form id="axisForm">
+            <section class="section">
+                <h2>参考点坐标</h2>
+                <p class="hint">P0 为原点，Px 定义 Y 轴方向（沿臂架方向），Pz 定义 Z 轴方向（竖直向上）</p>
+
+                <h3>P0 — 原点</h3>
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>纬度 B (°):</label>
+                        <input type="number" name="p0_b" step="0.000000001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>经度 L (°):</label>
+                        <input type="number" name="p0_l" step="0.000000001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>高度 H (m):</label>
+                        <input type="number" name="p0_h" step="0.000001" required>
+                    </div>
+                </div>
+
+                <h3>Px — Y 轴方向点（沿臂架）</h3>
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>纬度 B (°):</label>
+                        <input type="number" name="px_b" step="0.000000001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>经度 L (°):</label>
+                        <input type="number" name="px_l" step="0.000000001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>高度 H (m):</label>
+                        <input type="number" name="px_h" step="0.000001" required>
+                    </div>
+                </div>
+
+                <h3>Pz — Z 轴方向点（竖直向上）</h3>
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>纬度 B (°):</label>
+                        <input type="number" name="pz_b" step="0.000000001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>经度 L (°):</label>
+                        <input type="number" name="pz_l" step="0.000000001" required>
+                    </div>
+                    <div class="form-row">
+                        <label>高度 H (m):</label>
+                        <input type="number" name="pz_h" step="0.000001" required>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>高程参数</h2>
+                <div class="form-row">
+                    <label>高程差 (m):</label>
+                    <input type="number" name="undo" step="0.000001" value="11.9">
+                </div>
+            </section>
+
+            <button type="submit" class="btn-calculate">计算</button>
+        </form>
+
+        <!-- 结果展示 -->
+        <section class="section" id="result_section" style="display: none;">
+            <h2>计算结果</h2>
+
+            <h3>WGS84 → 泊位坐标系 转换矩阵</h3>
+            <p class="hint">将此矩阵复制到标定工具的「WGS84 到泊位坐标系转换矩阵」输入框中</p>
+            <div class="matrix-display" id="matrix_result"></div>
+            <div class="matrix-numpy" id="matrix_numpy"></div>
+        </section>
+
+        <div id="error_message" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script>
+        document.getElementById('axisForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+
+            try {
+                const response = await fetch('/local_axis_setup/calculate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                } else if (data.success) {
+                    showResult(data);
+                }
+            } catch (err) {
+                showError('请求失败: ' + err.message);
+            }
+        });
+
+        function showError(message) {
+            document.getElementById('error_message').textContent = message;
+            document.getElementById('error_message').style.display = 'block';
+            document.getElementById('result_section').style.display = 'none';
+        }
+
+        function showResult(data) {
+            document.getElementById('error_message').style.display = 'none';
+            document.getElementById('result_section').style.display = 'block';
+
+            const matrix = data.matrix;
+
+            // 表格展示
+            let matrixHtml = '<table class="matrix-table">';
+            for (let i = 0; i < 4; i++) {
+                matrixHtml += '<tr>';
+                for (let j = 0; j < 4; j++) {
+                    matrixHtml += `<td>${matrix[i][j].toFixed(6)}</td>`;
+                }
+                matrixHtml += '</tr>';
+            }
+            matrixHtml += '</table>';
+            document.getElementById('matrix_result').innerHTML = matrixHtml;
+
+            // numpy 格式（可直接复制）
+            let numpyStr = '[';
+            for (let i = 0; i < 4; i++) {
+                numpyStr += '[';
+                for (let j = 0; j < 4; j++) {
+                    numpyStr += matrix[i][j].toFixed(6);
+                    if (j < 3) numpyStr += ', ';
+                }
+                numpyStr += ']';
+                if (i < 3) numpyStr += ',\n ';
+            }
+            numpyStr += ']';
+            document.getElementById('matrix_numpy').innerHTML =
+                '<h4>numpy 格式（可直接复制）</h4>' +
+                '<pre>' + numpyStr + '</pre>';
+        }
+    </script>
+</body>
+</html>
