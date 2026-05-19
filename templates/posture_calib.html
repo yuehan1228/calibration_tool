@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大机姿态标定</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <nav class="nav-bar">
+            <a href="/">← 标定工具</a>
+            <span>
+                <a href="/local_axis_setup">泊位坐标系建立</a>
+                <span class="nav-current" style="margin-left: 12px;">大机姿态标定</span>
+            </span>
+        </nav>
+
+        <h1>大机姿态标定</h1>
+        <p class="hint">上传回转（slewing）和俯仰（luffing）数据，计算回转中心、顶部天线高度和回转半径。</p>
+
+        <form id="postureForm" enctype="multipart/form-data">
+            <!-- 文件上传 -->
+            <section class="section">
+                <h2>数据文件</h2>
+                <div class="form-row">
+                    <label>回转数据文件 (slewing):</label>
+                    <input type="file" name="slewing_file" accept=".csv,.txt" required>
+                    <span class="hint">不同回转角度下的 GNSS 数据，列包含 Ant1_lat, Ant1_lon, Ant1_alt, ...</span>
+                </div>
+                <div class="form-row">
+                    <label>俯仰数据文件 (luffing):</label>
+                    <input type="file" name="luffing_file" accept=".csv,.txt" required>
+                    <span class="hint">不同俯仰角度下的 GNSS 数据，列格式同上</span>
+                </div>
+            </section>
+
+            <!-- 变换矩阵 -->
+            <section class="section">
+                <h2>WGS84 到泊位坐标系转换矩阵</h2>
+                <p class="hint">输入 4×4 齐次变换矩阵（numpy 格式）</p>
+                <div class="form-row">
+                    <label>转换矩阵:</label>
+                    <textarea name="transform_matrix" id="transform_matrix" rows="5" placeholder="[[ 6.73e-01 -3.69e-02  7.38e-01  1.40e+04]
+ [ 5.90e-01  6.27e-01 -5.07e-01 -9.53e+03]
+ [-4.44e-01  7.77e-01  4.44e-01 -6.37e+06]
+ [ 0.00e+00  0.00e+00  0.00e+00  1.00e+00]]" required></textarea>
+                </div>
+            </section>
+
+            <!-- 天线选择 -->
+            <section class="section">
+                <h2>天线选择</h2>
+
+                <div class="form-row">
+                    <label>选择用于计算回转中心 X、Y 的天线（顶部天线）:</label>
+                    <select name="xy_ant" id="xy_ant">
+                        <option value="Ant1">Ant1 — 固定端右侧</option>
+                        <option value="Ant2" selected>Ant2 — 顶部天线</option>
+                        <option value="Ant3">Ant3 — 固定端中间</option>
+                        <option value="Ant4">Ant4 — 活动端</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label>选择用于计算回转中心 Z 的天线（可多选）:</label>
+                    <div class="checkbox-group" id="z_ants_group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="z_ant_1" value="Ant1"> Ant1 — 固定端右侧
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="z_ant_2" value="Ant2" checked> Ant2 — 顶部天线
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="z_ant_3" value="Ant3"> Ant3 — 固定端中间
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="z_ant_4" value="Ant4"> Ant4 — 活动端
+                        </label>
+                    </div>
+                    <span class="hint">单个天线：取其俯仰中心 Z 值。多个天线：取平均值。</span>
+                </div>
+            </section>
+
+            <!-- 高程参数 -->
+            <section class="section">
+                <h2>高程参数</h2>
+                <div class="form-row">
+                    <label>高程差 (m):</label>
+                    <input type="number" name="undo" step="0.000001" value="11.9">
+                </div>
+            </section>
+
+            <button type="submit" class="btn-calculate">计算</button>
+        </form>
+
+        <!-- 结果展示 -->
+        <section class="section" id="result_section" style="display: none;">
+            <h2>计算结果</h2>
+
+            <h3>回转中心</h3>
+            <div class="result-grid" id="rot_center_result"></div>
+
+            <h3>顶部天线高度</h3>
+            <div id="top_height_result"></div>
+
+            <h3>回转圆半径</h3>
+            <div id="radius_result"></div>
+
+            <h3>俯仰中心详情</h3>
+            <div id="luffing_centers_result"></div>
+        </section>
+
+        <div id="error_message" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script>
+        document.getElementById('postureForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+
+            // 收集选中的 Z 天线
+            const checkedZ = document.querySelectorAll('input[name^="z_ant_"]:checked');
+            const zAnts = Array.from(checkedZ).map(cb => cb.value).join(',');
+            formData.append('z_ants', zAnts);
+
+            try {
+                const response = await fetch('/posture_calib/calculate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                } else if (data.success) {
+                    showResult(data);
+                }
+            } catch (err) {
+                showError('请求失败: ' + err.message);
+            }
+        });
+
+        function showError(message) {
+            document.getElementById('error_message').textContent = message;
+            document.getElementById('error_message').style.display = 'block';
+            document.getElementById('result_section').style.display = 'none';
+        }
+
+        function showResult(data) {
+            document.getElementById('error_message').style.display = 'none';
+            document.getElementById('result_section').style.display = 'block';
+
+            // 回转中心
+            const rc = data.rot_center;
+            document.getElementById('rot_center_result').innerHTML =
+                `<p><strong>X:</strong> ${rc.x.toFixed(6)} m</p>` +
+                `<p><strong>Y:</strong> ${rc.y.toFixed(6)} m</p>` +
+                `<p><strong>Z:</strong> ${rc.z.toFixed(6)} m</p>`;
+
+            // 顶部天线高度
+            document.getElementById('top_height_result').innerHTML =
+                `<p>${data.top_height.toFixed(6)} m</p>`;
+
+            // 回转圆半径
+            document.getElementById('radius_result').innerHTML =
+                `<p>${data.radius.toFixed(6)} m</p>`;
+
+            // 俯仰中心详情
+            let luffingHtml = '';
+            const luffing = data.luffing;
+            for (const [ant, info] of Object.entries(luffing.ant_centers)) {
+                const c = info.center;
+                luffingHtml +=
+                    `<h4>${ant}</h4>` +
+                    `<p>俯仰中心: (${c[0].toFixed(6)}, ${c[1].toFixed(6)}, ${c[2].toFixed(6)}) m</p>` +
+                    `<p>拟合圆半径: ${info.radius.toFixed(6)} m</p>`;
+            }
+            luffingHtml += `<p class="hint">回转中心 Z 取以上天线俯仰中心 Z 的均值</p>`;
+            document.getElementById('luffing_centers_result').innerHTML = luffingHtml;
+        }
+    </script>
+</body>
+</html>

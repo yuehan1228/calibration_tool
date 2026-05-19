@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 from core.parser import parse_coordinate_file, parse_wgs84_file
 from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute, parse_transform_matrix, transform_blh_array_to_ecef, transform_ecef_to_local, compute_local_axis_matrix
 from core.solver import estimate_rigid_transform, compute_error
+from core.calibrator import compute_posture_params
 
 
 app = Flask(__name__)
@@ -73,6 +74,72 @@ def local_axis_setup_calculate():
         return jsonify({
             'success': True,
             'matrix': matrix.tolist()
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
+@app.route('/posture_calib')
+def posture_calib_page():
+    return render_template('posture_calib.html')
+
+
+@app.route('/posture_calib/calculate', methods=['POST'])
+def posture_calib_calculate():
+    try:
+        # 检查文件
+        if 'slewing_file' not in request.files or 'luffing_file' not in request.files:
+            return jsonify({'error': '请上传回转和俯仰数据文件'})
+
+        slewing_file = request.files['slewing_file']
+        luffing_file = request.files['luffing_file']
+
+        if slewing_file.filename == '' or luffing_file.filename == '':
+            return jsonify({'error': '请选择文件'})
+
+        if not (allowed_file(slewing_file.filename) and allowed_file(luffing_file.filename)):
+            return jsonify({'error': '只支持 CSV 和 TXT 格式'})
+
+        # 保存文件
+        slewing_path = os.path.join(app.config['UPLOAD_FOLDER'], 'posture_' + secure_filename(slewing_file.filename))
+        luffing_path = os.path.join(app.config['UPLOAD_FOLDER'], 'posture_' + secure_filename(luffing_file.filename))
+        slewing_file.save(slewing_path)
+        luffing_file.save(luffing_path)
+
+        # 获取参数
+        matrix_str = request.form.get('transform_matrix', '')
+        T = parse_transform_matrix(matrix_str)
+
+        xy_ant = request.form.get('xy_ant', 'Ant2')
+        z_ants_str = request.form.get('z_ants', 'Ant2')
+        z_ants = [a.strip() for a in z_ants_str.split(',') if a.strip()]
+
+        if not z_ants:
+            return jsonify({'error': '请至少选择一个用于计算 Z 的天线'})
+
+        undo = get_float(request.form, 'undo', 11.9)
+
+        # 计算
+        result = compute_posture_params(
+            slewing_path=slewing_path,
+            luffing_path=luffing_path,
+            T=T,
+            xy_ant=xy_ant,
+            z_ants=z_ants,
+            undo=undo
+        )
+
+        # 清理临时文件
+        try:
+            os.remove(slewing_path)
+            os.remove(luffing_path)
+        except OSError:
+            pass
+
+        return jsonify({
+            'success': True,
+            **result
         })
 
     except Exception as e:
