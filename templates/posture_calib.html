@@ -20,23 +20,35 @@
         <p class="hint">上传回转（slewing）和俯仰（luffing）数据，计算回转中心、顶部天线高度和回转半径。</p>
 
         <form id="postureForm" enctype="multipart/form-data">
+            <!-- 数据格式 -->
+            <section class="section">
+                <h2>数据格式</h2>
+                <div class="form-row">
+                    <label>GNSS 数据格式:</label>
+                    <select name="gnss_format" id="gnss_format">
+                        <option value="local">局部坐标 (x, y, z)</option>
+                        <option value="wgs84" selected>经纬度 (B, L, H)</option>
+                    </select>
+                </div>
+            </section>
+
             <!-- 文件上传 -->
             <section class="section">
                 <h2>数据文件</h2>
                 <div class="form-row">
                     <label>回转数据文件 (slewing):</label>
                     <input type="file" name="slewing_file" accept=".csv,.txt" required>
-                    <span class="hint">不同回转角度下的 GNSS 数据，列包含 Ant1_lat, Ant1_lon, Ant1_alt, ...</span>
+                    <span class="hint" id="slewing_hint">不同回转角度下的 GNSS 数据，列包含 Ant1_lat, Ant1_lon, Ant1_alt, ...</span>
                 </div>
                 <div class="form-row">
                     <label>俯仰数据文件 (luffing):</label>
                     <input type="file" name="luffing_file" accept=".csv,.txt" required>
-                    <span class="hint">不同俯仰角度下的 GNSS 数据，列格式同上</span>
+                    <span class="hint" id="luffing_hint">不同俯仰角度下的 GNSS 数据，列格式同上</span>
                 </div>
             </section>
 
-            <!-- 变换矩阵 -->
-            <section class="section">
+            <!-- WGS84转换矩阵 -->
+            <section class="section" id="transform_matrix_section">
                 <h2>WGS84 到泊位坐标系转换矩阵</h2>
                 <p class="hint">输入 4×4 齐次变换矩阵（numpy 格式）</p>
                 <div class="form-row">
@@ -44,7 +56,7 @@
                     <textarea name="transform_matrix" id="transform_matrix" rows="5" placeholder="[[ 6.73e-01 -3.69e-02  7.38e-01  1.40e+04]
  [ 5.90e-01  6.27e-01 -5.07e-01 -9.53e+03]
  [-4.44e-01  7.77e-01  4.44e-01 -6.37e+06]
- [ 0.00e+00  0.00e+00  0.00e+00  1.00e+00]]" required></textarea>
+ [ 0.00e+00  0.00e+00  0.00e+00  1.00e+00]]"></textarea>
                 </div>
             </section>
 
@@ -82,8 +94,8 @@
                 </div>
             </section>
 
-            <!-- 高程参数 -->
-            <section class="section">
+            <!-- 高程参数（仅经纬度时显示） -->
+            <section class="section" id="undo_section">
                 <h2>高程参数</h2>
                 <div class="form-row">
                     <label>高程差 (m):</label>
@@ -115,6 +127,29 @@
     </div>
 
     <script>
+        // 格式切换 → 显示/隐藏转换矩阵和高程差
+        document.getElementById('gnss_format').addEventListener('change', updateFormatVisibility);
+
+        function updateFormatVisibility() {
+            const fmt = document.getElementById('gnss_format').value;
+            const isWgs84 = (fmt === 'wgs84');
+            document.getElementById('transform_matrix_section').style.display = isWgs84 ? 'block' : 'none';
+            document.getElementById('undo_section').style.display = isWgs84 ? 'block' : 'none';
+
+            // 更新文件提示
+            const latHint = '列包含 Ant1_lat, Ant1_lon, Ant1_alt, Ant2_lat, ...';
+            const localHint = '列包含 Ant1_x, Ant1_y, Ant1_z, Ant2_x, ...';
+            document.getElementById('slewing_hint').textContent = isWgs84
+                ? '不同回转角度下的 GNSS 数据，' + latHint
+                : '不同回转角度下的局部坐标数据，' + localHint;
+            document.getElementById('luffing_hint').textContent = isWgs84
+                ? '不同俯仰角度下的 GNSS 数据，' + latHint
+                : '不同俯仰角度下的局部坐标数据，' + localHint;
+        }
+
+        // 页面加载时初始化
+        updateFormatVisibility();
+
         document.getElementById('postureForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 

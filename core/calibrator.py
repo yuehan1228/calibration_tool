@@ -71,7 +71,35 @@ def fit_circle_3d(points):
     return center_3d, radius, normal / np.linalg.norm(normal)
 
 
-def _convert_antenna_columns(df, T_inv, undo=11.9):
+def _convert_antenna_columns_local(df):
+    """
+    将 DataFrame 中 Ant1~Ant4 的局部坐标列重命名为统一 pier 列。
+
+    期望列名格式: Ant1_x, Ant1_y, Ant1_z, Ant2_x, ...
+
+    Args:
+        df: pandas DataFrame，包含天线局部坐标列
+
+    Returns:
+        df: 添加了 AntN_pier_x/y/z 列的 DataFrame
+    """
+    for ant in ['Ant1', 'Ant2', 'Ant3', 'Ant4']:
+        x_col = f'{ant}_x'
+        y_col = f'{ant}_y'
+        z_col = f'{ant}_z'
+
+        # 检查列是否存在
+        if x_col not in df.columns:
+            continue
+
+        df[f'{ant}_pier_x'] = df[x_col].astype(float)
+        df[f'{ant}_pier_y'] = df[y_col].astype(float)
+        df[f'{ant}_pier_z'] = df[z_col].astype(float)
+
+    return df
+
+
+def _convert_antenna_columns_blh(df, T_inv, undo=11.9):
     """
     将 DataFrame 中 Ant1~Ant4 的 BLH 列转换为泊位局部坐标。
 
@@ -120,27 +148,53 @@ def _convert_antenna_columns(df, T_inv, undo=11.9):
     return df
 
 
-def process_slewing_data(csv_path, T_inv, ant_name, undo=11.9):
+def _load_and_convert(csv_path, gnss_format, T_inv=None, undo=11.9):
+    """
+    读取 CSV 并按格式转换为统一 pier 列。
+
+    Args:
+        csv_path: CSV 文件路径
+        gnss_format: 'local' 或 'wgs84'
+        T_inv: 4x4 逆变换矩阵（仅 wgs84 时需要）
+        undo: 高程差（仅 wgs84 时需要）
+
+    Returns:
+        pandas DataFrame，包含 AntN_pier_x/y/z 列
+    """
+    df = pd.read_csv(csv_path)
+
+    if gnss_format == 'local':
+        df = _convert_antenna_columns_local(df)
+    elif gnss_format == 'wgs84':
+        if T_inv is None:
+            raise ValueError("经纬度格式需要提供转换矩阵")
+        df = _convert_antenna_columns_blh(df, T_inv, undo)
+    else:
+        raise ValueError(f"不支持的数据格式: {gnss_format}")
+
+    return df
+
+
+def process_slewing_data(csv_path, ant_name, gnss_format='wgs84', T_inv=None, undo=11.9):
     """
     处理回转（slewing）数据：拟合 2D 圆，得到回转中心 XY 和顶部天线高度。
 
     Args:
         csv_path: 回转 CSV 文件路径
-        T_inv: 4x4 逆变换矩阵
         ant_name: 用于计算的 Ant 名称（如 'Ant2'）
-        undo: 高程差
+        gnss_format: 'local' 或 'wgs84'
+        T_inv: 4x4 逆变换矩阵（仅 wgs84 时需要）
+        undo: 高程差（仅 wgs84 时需要）
 
     Returns:
         dict: {
             'rot_x': 回转中心 X,
             'rot_y': 回转中心 Y,
             'radius': 回转圆半径,
-            'top_height': 顶部天线平均高度 (Z),
-            'points': 用于可视化的局部坐标点列表
+            'top_height': 顶部天线平均高度 (Z)
         }
     """
-    df = pd.read_csv(csv_path)
-    df = _convert_antenna_columns(df, T_inv, undo)
+    df = _load_and_convert(csv_path, gnss_format, T_inv, undo)
 
     x = df[f'{ant_name}_pier_x'].values
     y = df[f'{ant_name}_pier_y'].values
@@ -165,15 +219,16 @@ def process_slewing_data(csv_path, T_inv, ant_name, undo=11.9):
     }
 
 
-def process_luffing_data(csv_path, T_inv, ant_names, undo=11.9):
+def process_luffing_data(csv_path, ant_names, gnss_format='wgs84', T_inv=None, undo=11.9):
     """
     处理俯仰（luffing）数据：对每个选定天线拟合 3D 圆，取俯仰中心 Z。
 
     Args:
         csv_path: 俯仰 CSV 文件路径
-        T_inv: 4x4 逆变换矩阵
         ant_names: Ant 名称列表（如 ['Ant2'] 或 ['Ant2', 'Ant3']）
-        undo: 高程差
+        gnss_format: 'local' 或 'wgs84'
+        T_inv: 4x4 逆变换矩阵（仅 wgs84 时需要）
+        undo: 高程差（仅 wgs84 时需要）
 
     Returns:
         dict: {
@@ -181,8 +236,7 @@ def process_luffing_data(csv_path, T_inv, ant_names, undo=11.9):
             'ant_centers': {ant: {'center': [x,y,z], 'radius': r}} 各天线详细信息
         }
     """
-    df = pd.read_csv(csv_path)
-    df = _convert_antenna_columns(df, T_inv, undo)
+    df = _load_and_convert(csv_path, gnss_format, T_inv, undo)
 
     ant_centers = {}
     z_values = []
@@ -210,17 +264,19 @@ def process_luffing_data(csv_path, T_inv, ant_names, undo=11.9):
     }
 
 
-def compute_posture_params(slewing_path, luffing_path, T, xy_ant, z_ants, undo=11.9):
+def compute_posture_params(slewing_path, luffing_path, xy_ant, z_ants,
+                          gnss_format='wgs84', T=None, undo=11.9):
     """
     综合计算大机姿态参数。
 
     Args:
         slewing_path: 回转 CSV 路径
         luffing_path: 俯仰 CSV 路径
-        T: 4x4 变换矩阵 (WGS84 ECEF → 局部坐标)
         xy_ant: 用于计算 XY 的天线名（如 'Ant2'）
         z_ants: 用于计算 Z 的天线名列表（如 ['Ant2']）
-        undo: 高程差（米）
+        gnss_format: 数据格式 'local'（局部坐标）或 'wgs84'（经纬度）
+        T: 4x4 变换矩阵（仅 wgs84 时需要）
+        undo: 高程差（仅 wgs84 时需要）
 
     Returns:
         dict: {
@@ -231,10 +287,12 @@ def compute_posture_params(slewing_path, luffing_path, T, xy_ant, z_ants, undo=1
             'luffing': {...}                   # 俯仰数据详情
         }
     """
-    T_inv = np.linalg.inv(T)
+    T_inv = np.linalg.inv(T) if T is not None else None
 
-    slewing_result = process_slewing_data(slewing_path, T_inv, xy_ant, undo)
-    luffing_result = process_luffing_data(luffing_path, T_inv, z_ants, undo)
+    slewing_result = process_slewing_data(
+        slewing_path, xy_ant, gnss_format, T_inv, undo)
+    luffing_result = process_luffing_data(
+        luffing_path, z_ants, gnss_format, T_inv, undo)
 
     return {
         'rot_center': {

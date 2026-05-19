@@ -108,9 +108,7 @@ def posture_calib_calculate():
         luffing_file.save(luffing_path)
 
         # 获取参数
-        matrix_str = request.form.get('transform_matrix', '')
-        T = parse_transform_matrix(matrix_str)
-
+        gnss_format = request.form.get('gnss_format', 'wgs84')
         xy_ant = request.form.get('xy_ant', 'Ant2')
         z_ants_str = request.form.get('z_ants', 'Ant2')
         z_ants = [a.strip() for a in z_ants_str.split(',') if a.strip()]
@@ -118,15 +116,22 @@ def posture_calib_calculate():
         if not z_ants:
             return jsonify({'error': '请至少选择一个用于计算 Z 的天线'})
 
-        undo = get_float(request.form, 'undo', 11.9)
+        # 经纬度格式需要转换矩阵和高程差
+        T = None
+        undo = 11.9
+        if gnss_format == 'wgs84':
+            matrix_str = request.form.get('transform_matrix', '')
+            T = parse_transform_matrix(matrix_str)
+            undo = get_float(request.form, 'undo', 11.9)
 
         # 计算
         result = compute_posture_params(
             slewing_path=slewing_path,
             luffing_path=luffing_path,
-            T=T,
             xy_ant=xy_ant,
             z_ants=z_ants,
+            gnss_format=gnss_format,
+            T=T,
             undo=undo
         )
 
