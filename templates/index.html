@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>雷达自动标定工具</title>
+    <title>装船机标定</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <nav class="nav-bar">
-            <span class="nav-current">标定工具</span>
-            <span>
-                <a href="/local_axis_setup">泊位坐标系建立</a>
-                <a href="/posture_calib" style="margin-left: 12px;">大机姿态标定 →</a>
-            </span>
+        <h1>装船机标定</h1>
+
+        <nav class="tabs" aria-label="标定类型">
+            <a href="{{ url_for('local_axis_setup_page') }}">泊位坐标系建立</a>
+            <a href="{{ url_for('posture_calib_page') }}">大机姿态标定</a>
+            <a href="{{ url_for('index') }}" class="active" aria-current="page">雷达自动标定</a>
         </nav>
 
-        <h1>雷达自动标定工具</h1>
+        <h2 class="page-title">雷达自动标定</h2>
 
         <form id="calibForm" enctype="multipart/form-data">
             <!-- 文件上传 -->

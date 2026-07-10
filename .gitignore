@@ -40,3 +40,5 @@ uploads/*
 .coverage
 htmlcov/
 .pytest_cache/
+
+.codegraph/
