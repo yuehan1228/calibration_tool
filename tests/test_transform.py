@@ -1,6 +1,14 @@
 # tests/test_transform.py
 import numpy as np
-from core.transform import rodrigues, transform_to_rot_center, transform_to_arm, transform_to_chute
+import pytest
+from core.transform import (
+    rodrigues,
+    transform_to_rot_center,
+    transform_to_arm,
+    transform_to_chute,
+    parse_transform_matrix,
+    compute_local_axis_matrix,
+)
 
 
 def test_rodrigues_rotation():
@@ -211,3 +219,34 @@ def test_transform_multiple_points():
 
     assert result.shape == (5, 3)
     assert not np.any(np.isnan(result))
+
+
+def test_parse_transform_matrix_formats():
+    """测试 Python 列表与空格分隔的 NumPy 矩阵格式解析"""
+    py_fmt = """[[1.0, 0.0, 0.0, 10.5],
+                 [0.0, 1.0, 0.0, -2.5],
+                 [0.0, 0.0, 1.0, 3.0],
+                 [0.0, 0.0, 0.0, 1.0]]"""
+    np_fmt = """[[ 1.000000e+00  0.000000e+00  0.000000e+00  1.050000e+01]
+                 [ 0.000000e+00  1.000000e+00  0.000000e+00 -2.500000e+00]
+                 [ 0.000000e+00  0.000000e+00  1.000000e+00  3.000000e+00]
+                 [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]"""
+
+    m1 = parse_transform_matrix(py_fmt)
+    m2 = parse_transform_matrix(np_fmt)
+    assert m1.shape == (4, 4)
+    assert np.allclose(m1, m2)
+
+    with pytest.raises(ValueError):
+        parse_transform_matrix("[[1, 2], [3, 4]]")
+
+
+def test_compute_local_axis_matrix_invalid_blh():
+    """非法经纬度应明确抛出 ValueError"""
+    with pytest.raises(ValueError):
+        compute_local_axis_matrix(
+            (95.0, 120.0, 10.0),  # 非法纬度
+            (30.0, 120.0, 10.0),
+            (30.001, 120.0, 10.0),
+            (30.0, 120.0, 20.0),
+        )

@@ -5,9 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>装船机标定</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "{{ url_for('static', filename='vendor/three.module.min.js') }}"
+        }
+    }
+    </script>
 </head>
 <body>
-    <div class="container">
+    <div class="container wide-mode" id="main_container">
         <h1>装船机标定</h1>
 
         <nav class="tabs" aria-label="标定类型">
@@ -18,136 +25,390 @@
 
         <h2 class="page-title">雷达自动标定</h2>
 
-        <form id="calibForm" enctype="multipart/form-data">
-            <!-- 文件上传 -->
+        <div class="mode-switch">
+            <button type="button" class="mode-btn active" id="btn_mode_pcd">PCD 点云选点标定</button>
+            <button type="button" class="mode-btn" id="btn_mode_legacy">CSV/TXT 文件上传（旧版）</button>
+        </div>
+
+        <!-- ==================== 新版：PCD 点云选点标定 ==================== -->
+        <div id="pcd_mode_panel">
+            <!-- 1. 多帧 PCD 上传与 3D 选点 -->
             <section class="section">
-                <h2>文件上传</h2>
-                <div class="form-row">
-                    <label>GNSS 数据格式:</label>
-                    <select name="gnss_format" id="gnss_format">
-                        <option value="local">局部坐标 (x, y, z)</option>
-                        <option value="wgs84" selected>经纬度 (B, L, H) - 纬度、经度、高度</option>
-                    </select>
+                <h2>1. 多帧 PCD 点云与 3D 选点</h2>
+                <p class="hint">同一静止大机姿态下采集的多帧 .pcd 点云可同时加载并叠加显示。点击“选点模式”（或按住 Shift 点击点云）选取 GNSS 天线所在点。</p>
+
+                <div class="pcd-toolbar">
+                    <div class="pcd-toolbar-group">
+                        <label for="pcd_file_input" style="margin:0;font-weight:600;">加载 PCD:</label>
+                        <input type="file" id="pcd_file_input" accept=".pcd" multiple>
+                    </div>
+                    <div class="pcd-toolbar-group">
+                        <button type="button" class="btn-sm active" id="pcd_mode_view_btn">浏览模式</button>
+                        <button type="button" class="btn-sm" id="pcd_mode_pick_btn">选点模式</button>
+                    </div>
+                    <div class="pcd-toolbar-group">
+                        <span>着色:</span>
+                        <select id="pcd_color_mode">
+                            <option value="height" selected>高度 Z</option>
+                            <option value="intensity">反射强度</option>
+                            <option value="frame">按帧区分</option>
+                        </select>
+                    </div>
+                    <div class="pcd-toolbar-group">
+                        <span>点大小:</span>
+                        <input type="range" id="pcd_point_size" min="1" max="8" step="0.5" value="2.5">
+                    </div>
+                    <div class="pcd-toolbar-group">
+                        <span>拾取半径:</span>
+                        <input type="range" id="pcd_pick_threshold" min="0.05" max="1.0" step="0.05" value="0.25">
+                        <span id="pcd_pick_threshold_val">0.25m</span>
+                    </div>
+                    <div class="pcd-toolbar-group">
+                        <button type="button" class="btn-sm" id="pcd_reset_view_btn">重置视角</button>
+                        <button type="button" class="btn-sm" id="pcd_top_view_btn">俯视图</button>
+                        <button type="button" class="btn-sm btn-danger-sm" id="pcd_clear_frames_btn">清空点云</button>
+                    </div>
                 </div>
-                <div class="form-row">
-                    <label>GNSS 坐标文件:</label>
-                    <input type="file" name="gnss_file" accept=".csv,.txt" required>
+
+                <div class="frame-list" id="pcd_frame_list">
+                    <span class="hint" style="margin:0;">尚未加载 PCD 点云文件</span>
                 </div>
-                <div class="form-row">
-                    <label>雷达坐标文件:</label>
-                    <input type="file" name="radar_file" accept=".csv,.txt" required>
-                </div>
-                <div class="form-row" id="undo_row" style="display: none;">
-                    <label>高程差 (m):</label>
-                    <input type="number" name="undo" step="0.000001" value="11.9">
+
+                <div class="pcd-viewer-wrap" id="pcd_viewer_wrap">
+                    <div id="pcd_canvas_container"></div>
+                    <div class="pcd-hud-top" id="pcd_hud_top">左键旋转 · 右键平移 · 滚轮缩放 · 按住 Shift 或切至选点模式左键拾取点</div>
+                    <div class="pcd-hud" id="pcd_hud">请先上传一帧或多帧 .pcd 文件</div>
                 </div>
             </section>
 
-            <!-- WGS84转换矩阵 -->
-            <section class="section" id="transform_matrix_section" style="display: none;">
-                <h2>WGS84 到泊位坐标系转换矩阵</h2>
-                <p class="hint">输入4x4齐次变换矩阵（numpy格式），将经纬度坐标转换为泊位局部坐标</p>
-                <div class="form-row">
-                    <label>转换矩阵:</label>
-                    <textarea name="transform_matrix" id="transform_matrix" rows="5" placeholder="[[ 6.73e-01 -3.69e-02  7.38e-01  1.40e+04]
- [ 5.90e-01  6.27e-01 -5.07e-01 -9.53e+03]
- [-4.44e-01  7.77e-01  4.44e-01 -6.37e+06]
- [ 0.00e+00  0.00e+00  0.00e+00  1.00e+00]]"></textarea>
+            <!-- 2. 标定点列表 -->
+            <section class="section">
+                <h2>2. 标定点配对列表（雷达点 ↔ GNSS 天线点）</h2>
+                <div class="pcd-toolbar" style="justify-content: space-between;">
+                    <div class="pcd-toolbar-group">
+                        <button type="button" class="btn-sm" id="pcd_add_manual_btn">+ 手动添加点</button>
+                        <button type="button" class="btn-sm" id="pcd_export_json_btn">导出标定点 JSON</button>
+                        <button type="button" class="btn-sm" id="pcd_import_json_btn">导入标定点 JSON</button>
+                        <input type="file" id="pcd_import_json_input" accept=".json" style="display:none;">
+                        <button type="button" class="btn-sm btn-danger-sm" id="pcd_clear_points_btn">清空列表</button>
+                    </div>
+                    <span class="hint" id="pcd_points_count_hint" style="margin:0;">已选 0 组点（至少需要 3 组，建议多选以支持离群点自动剔除）</span>
+                </div>
+
+                <div class="table-scroll">
+                    <table class="points-table">
+                        <thead>
+                            <tr>
+                                <th>启用</th>
+                                <th>#</th>
+                                <th>来源帧</th>
+                                <th>雷达 X (m)</th>
+                                <th>雷达 Y (m)</th>
+                                <th>雷达 Z (m)</th>
+                                <th>纬度 B (°)</th>
+                                <th>经度 L (°)</th>
+                                <th>海拔 H (m)</th>
+                                <th>误差 / 状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pcd_points_tbody">
+                            <tr>
+                                <td colspan="11" class="hint" style="padding:16px;">暂无标定点，请在上方点云中拾取或点击“手动添加点”。</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 
-            <!-- 传感器配置 -->
+            <!-- 3. 公共参数与迭代设置 -->
             <section class="section">
-                <h2>传感器配置</h2>
-                <div class="form-row">
-                    <label>目标坐标系:</label>
-                    <select name="coord_system" id="coord_system">
-                        <option value="rot_center">旋转中心坐标系</option>
-                        <option value="arm">臂架坐标系</option>
-                        <option value="chute">溜筒坐标系</option>
-                    </select>
+                <h2>3. 泊位矩阵、机构姿态与迭代参数</h2>
+
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>高程差 undo (m) <span class="hint" style="font-weight:400;">（所有标定点共用）</span>:</label>
+                        <input type="number" id="pcd_undo" step="0.000001" value="11.9" required>
+                    </div>
+                    <div class="form-row">
+                        <label>目标坐标系:</label>
+                        <select id="pcd_coord_system">
+                            <option value="rot_center">旋转中心坐标系</option>
+                            <option value="arm">臂架坐标系</option>
+                            <option value="chute">溜筒坐标系</option>
+                        </select>
+                    </div>
                 </div>
-            </section>
 
-            <!-- 姿态参数 -->
-            <section class="section">
-                <h2>大机姿态参数</h2>
+                <div class="form-row">
+                    <label>WGS84 到泊位坐标系转换矩阵（4×4，支持 Python 列表或 NumPy 格式）:</label>
+                    <textarea id="pcd_transform_matrix" rows="4" placeholder="[[ 6.73e-01, -3.69e-02,  7.38e-01,  1.40e+04],
+ [ 5.90e-01,  6.27e-01, -5.07e-01, -9.53e+03],
+ [-4.44e-01,  7.77e-01,  4.44e-01, -6.37e+06],
+ [ 0.00e+00,  0.00e+00,  0.00e+00,  1.00e+00]]"></textarea>
+                </div>
 
-                <h3>基本参数</h3>
+                <h3>大机姿态与机构当前位置</h3>
                 <div class="form-grid">
                     <div class="form-row">
                         <label>回转角 (°):</label>
-                        <input type="number" name="slewing_angle" step="0.000001" required>
+                        <input type="number" id="pcd_slewing_angle" step="0.000001" required>
                     </div>
                     <div class="form-row">
                         <label>俯仰角 (°):</label>
-                        <input type="number" name="luffing_angle" step="0.000001" required>
+                        <input type="number" id="pcd_luffing_angle" step="0.000001" required>
                     </div>
                 </div>
 
-                <h3>旋转中心坐标</h3>
                 <div class="form-grid">
                     <div class="form-row">
-                        <label>X (m):</label>
-                        <input type="number" name="rot_center_x" step="0.000001" required>
+                        <label>旋转中心 X (m):</label>
+                        <input type="number" id="pcd_rot_center_x" step="0.000001" required>
                     </div>
                     <div class="form-row">
-                        <label>Y (m):</label>
-                        <input type="number" name="rot_center_y" step="0.000001" required>
+                        <label>旋转中心 Y (m):</label>
+                        <input type="number" id="pcd_rot_center_y" step="0.000001" required>
                     </div>
                     <div class="form-row">
-                        <label>Z (m):</label>
-                        <input type="number" name="rot_center_z" step="0.000001" required>
+                        <label>旋转中心 Z (m):</label>
+                        <input type="number" id="pcd_rot_center_z" step="0.000001" required>
                     </div>
                 </div>
 
-                <!-- 臂架参数（臂架坐标系和溜筒坐标系时显示） -->
-                <div id="arm_params" style="display: none;">
-                    <h3>臂架参数</h3>
+                <div id="pcd_arm_params" style="display: none;">
                     <div class="form-grid">
                         <div class="form-row">
                             <label>臂架长度 (m):</label>
-                            <input type="number" name="arm_length" step="0.000001">
+                            <input type="number" id="pcd_arm_length" step="0.000001" value="25.3">
                         </div>
                         <div class="form-row">
                             <label>伸缩距离 (m):</label>
-                            <input type="number" name="stretch_dist" step="0.000001">
+                            <input type="number" id="pcd_stretch_dist" step="0.000001" value="0">
                         </div>
                     </div>
                 </div>
 
-                <!-- 连接点参数（仅溜筒坐标系时显示） -->
-                <div id="connect_params" style="display: none;">
-                    <h3>连接点参数</h3>
+                <div id="pcd_connect_params" style="display: none;">
                     <div class="form-grid">
                         <div class="form-row">
                             <label>连接点距离 (m):</label>
-                            <input type="number" name="connect_dist" step="0.000001">
+                            <input type="number" id="pcd_connect_dist" step="0.000001" value="0">
                         </div>
                     </div>
                 </div>
+
+                <h3>迭代误差剔除设置</h3>
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>允许单点最大误差阈值 (m):</label>
+                        <input type="number" id="pcd_error_threshold" step="0.001" min="0.001" value="0.10" required>
+                    </div>
+                    <div class="form-row">
+                        <label>最少保留点数（下限 3）:</label>
+                        <input type="number" id="pcd_min_points" step="1" min="3" value="3" required>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-calculate" id="pcd_calculate_btn">开始迭代标定</button>
             </section>
 
-            <button type="submit" class="btn-calculate">计算</button>
-        </form>
+            <div id="pcd_error_message" class="error-message" style="display: none;"></div>
 
-        <!-- 结果展示 -->
-        <section class="section" id="result_section" style="display: none;">
-            <h2>计算结果</h2>
+            <!-- 4. 迭代标定结果 -->
+            <section class="section" id="pcd_result_section" style="display: none;">
+                <h2>4. 迭代标定结果</h2>
+                <div class="calib-banner" id="pcd_calib_banner"></div>
 
-            <h3>标定矩阵 T_fixed</h3>
-            <div class="matrix-display" id="matrix_result"></div>
+                <h3>最终标定矩阵 T_fixed</h3>
+                <div class="matrix-display" id="pcd_matrix_result"></div>
 
-            <h3>变换误差</h3>
-            <div class="error-summary" id="error_summary"></div>
-            <div class="error-details" id="error_details"></div>
-        </section>
+                <div class="matrix-copy-bar">
+                    <h4 style="color:#555;margin:0;">Python 列表格式（高精度）</h4>
+                    <button type="button" class="btn-sm" id="pcd_copy_matrix_btn">复制矩阵</button>
+                </div>
+                <div class="matrix-numpy" style="margin-top:0;">
+                    <pre id="pcd_matrix_numpy"></pre>
+                </div>
 
-        <div id="error_message" class="error-message" style="display: none;"></div>
+                <h3>迭代剔除过程</h3>
+                <div class="table-scroll">
+                    <table class="iter-table">
+                        <thead>
+                            <tr>
+                                <th>轮次</th>
+                                <th>参与计算点数</th>
+                                <th>平均误差 (m)</th>
+                                <th>最大误差 (m)</th>
+                                <th>本轮操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pcd_iter_tbody"></tbody>
+                    </table>
+                </div>
+
+                <h3>各点误差明细</h3>
+                <div class="error-summary" id="pcd_error_summary"></div>
+                <div class="error-details" id="pcd_error_details"></div>
+            </section>
+        </div>
+
+        <!-- ==================== 旧版：CSV/TXT 文件上传 ==================== -->
+        <div id="legacy_mode_panel" style="display: none;">
+            <form id="calibForm" enctype="multipart/form-data">
+                <!-- 文件上传 -->
+                <section class="section">
+                    <h2>文件上传</h2>
+                    <div class="form-row">
+                        <label>GNSS 数据格式:</label>
+                        <select name="gnss_format" id="gnss_format">
+                            <option value="local">局部坐标 (x, y, z)</option>
+                            <option value="wgs84" selected>经纬度 (B, L, H) - 纬度、经度、高度</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>GNSS 坐标文件:</label>
+                        <input type="file" name="gnss_file" accept=".csv,.txt" required>
+                    </div>
+                    <div class="form-row">
+                        <label>雷达坐标文件:</label>
+                        <input type="file" name="radar_file" accept=".csv,.txt" required>
+                    </div>
+                    <div class="form-row" id="undo_row" style="display: none;">
+                        <label>高程差 (m):</label>
+                        <input type="number" name="undo" step="0.000001" value="11.9">
+                    </div>
+                </section>
+
+                <!-- WGS84转换矩阵 -->
+                <section class="section" id="transform_matrix_section" style="display: none;">
+                    <h2>WGS84 到泊位坐标系转换矩阵</h2>
+                    <p class="hint">输入4x4齐次变换矩阵（numpy格式），将经纬度坐标转换为泊位局部坐标</p>
+                    <div class="form-row">
+                        <label>转换矩阵:</label>
+                        <textarea name="transform_matrix" id="transform_matrix" rows="5" placeholder="[[ 6.73e-01, -3.69e-02,  7.38e-01,  1.40e+04],
+ [ 5.90e-01,  6.27e-01, -5.07e-01, -9.53e+03],
+ [-4.44e-01,  7.77e-01,  4.44e-01, -6.37e+06],
+ [ 0.00e+00,  0.00e+00,  0.00e+00,  1.00e+00]]"></textarea>
+                    </div>
+                </section>
+
+                <!-- 传感器配置 -->
+                <section class="section">
+                    <h2>传感器配置</h2>
+                    <div class="form-row">
+                        <label>目标坐标系:</label>
+                        <select name="coord_system" id="coord_system">
+                            <option value="rot_center">旋转中心坐标系</option>
+                            <option value="arm">臂架坐标系</option>
+                            <option value="chute">溜筒坐标系</option>
+                        </select>
+                    </div>
+                </section>
+
+                <!-- 姿态参数 -->
+                <section class="section">
+                    <h2>大机姿态参数</h2>
+
+                    <h3>基本参数</h3>
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <label>回转角 (°):</label>
+                            <input type="number" name="slewing_angle" step="0.000001" required>
+                        </div>
+                        <div class="form-row">
+                            <label>俯仰角 (°):</label>
+                            <input type="number" name="luffing_angle" step="0.000001" required>
+                        </div>
+                    </div>
+
+                    <h3>旋转中心坐标</h3>
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <label>X (m):</label>
+                            <input type="number" name="rot_center_x" step="0.000001" required>
+                        </div>
+                        <div class="form-row">
+                            <label>Y (m):</label>
+                            <input type="number" name="rot_center_y" step="0.000001" required>
+                        </div>
+                        <div class="form-row">
+                            <label>Z (m):</label>
+                            <input type="number" name="rot_center_z" step="0.000001" required>
+                        </div>
+                    </div>
+
+                    <!-- 臂架参数（臂架坐标系和溜筒坐标系时显示） -->
+                    <div id="arm_params" style="display: none;">
+                        <h3>臂架参数</h3>
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label>臂架长度 (m):</label>
+                                <input type="number" name="arm_length" step="0.000001">
+                            </div>
+                            <div class="form-row">
+                                <label>伸缩距离 (m):</label>
+                                <input type="number" name="stretch_dist" step="0.000001">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 连接点参数（仅溜筒坐标系时显示） -->
+                    <div id="connect_params" style="display: none;">
+                        <h3>连接点参数</h3>
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label>连接点距离 (m):</label>
+                                <input type="number" name="connect_dist" step="0.000001">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <button type="submit" class="btn-calculate">计算</button>
+            </form>
+
+            <!-- 结果展示 -->
+            <section class="section" id="result_section" style="display: none;">
+                <h2>计算结果</h2>
+
+                <h3>标定矩阵 T_fixed</h3>
+                <div class="matrix-display" id="matrix_result"></div>
+
+                <h3>变换误差</h3>
+                <div class="error-summary" id="error_summary"></div>
+                <div class="error-details" id="error_details"></div>
+            </section>
+
+            <div id="error_message" class="error-message" style="display: none;"></div>
+        </div>
     </div>
 
     <script>
-        // GNSS格式切换
+        // 模式切换（新版 PCD / 旧版 CSV）
+        (function() {
+            const btnPcd = document.getElementById('btn_mode_pcd');
+            const btnLegacy = document.getElementById('btn_mode_legacy');
+            const pcdPanel = document.getElementById('pcd_mode_panel');
+            const legacyPanel = document.getElementById('legacy_mode_panel');
+            const container = document.getElementById('main_container');
+
+            function switchMode(mode) {
+                const isPcd = (mode === 'pcd');
+                btnPcd.classList.toggle('active', isPcd);
+                btnLegacy.classList.toggle('active', !isPcd);
+                pcdPanel.style.display = isPcd ? 'block' : 'none';
+                legacyPanel.style.display = isPcd ? 'none' : 'block';
+                container.classList.toggle('wide-mode', isPcd);
+                if (isPcd) {
+                    window.dispatchEvent(new Event('resize'));
+                }
+            }
+
+            btnPcd.addEventListener('click', () => switchMode('pcd'));
+            btnLegacy.addEventListener('click', () => switchMode('legacy'));
+        })();
+
+        // ===== 旧版 CSV/TXT 逻辑保持不变 =====
         document.getElementById('gnss_format').addEventListener('change', updateGnssFormatVisibility);
 
         function updateGnssFormatVisibility() {
@@ -158,7 +419,6 @@
             undoRow.style.display = (gnssFormat === 'wgs84') ? 'block' : 'none';
         }
 
-        // 坐标系切换时显示/隐藏相应参数
         document.getElementById('coord_system').addEventListener('change', updateCoordSystemVisibility);
 
         function updateCoordSystemVisibility() {
@@ -166,16 +426,12 @@
             const armParams = document.getElementById('arm_params');
             const connectParams = document.getElementById('connect_params');
 
-            // 臂架参数：臂架坐标系和溜筒坐标系时显示
             armParams.style.display = (coordSystem === 'arm' || coordSystem === 'chute') ? 'block' : 'none';
-
-            // 连接点参数：仅溜筒坐标系时显示
             connectParams.style.display = (coordSystem === 'chute') ? 'block' : 'none';
 
-            // 动态管理 required 属性
-            const armLength = document.querySelector('input[name="arm_length"]');
-            const stretchDist = document.querySelector('input[name="stretch_dist"]');
-            const connectDist = document.querySelector('input[name="connect_dist"]');
+            const armLength = document.querySelector('#calibForm input[name="arm_length"]');
+            const stretchDist = document.querySelector('#calibForm input[name="stretch_dist"]');
+            const connectDist = document.querySelector('#calibForm input[name="connect_dist"]');
 
             if (coordSystem === 'arm' || coordSystem === 'chute') {
                 armLength.required = true;
@@ -185,18 +441,12 @@
                 stretchDist.required = false;
             }
 
-            if (coordSystem === 'chute') {
-                connectDist.required = true;
-            } else {
-                connectDist.required = false;
-            }
+            connectDist.required = (coordSystem === 'chute');
         }
 
-        // 页面加载时初始化
         updateGnssFormatVisibility();
         updateCoordSystemVisibility();
 
-        // 表单提交
         document.getElementById('calibForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -230,7 +480,6 @@
             document.getElementById('error_message').style.display = 'none';
             document.getElementById('result_section').style.display = 'block';
 
-            // 显示矩阵
             const matrix = data.matrix;
             let matrixHtml = '<table class="matrix-table">';
             for (let i = 0; i < 4; i++) {
@@ -243,11 +492,9 @@
             matrixHtml += '</table>';
             document.getElementById('matrix_result').innerHTML = matrixHtml;
 
-            // 显示误差汇总
             document.getElementById('error_summary').innerHTML =
                 `平均误差: ${data.mean_error.toFixed(4)} m | 最大误差: ${data.max_error.toFixed(4)} m`;
 
-            // 显示详细误差
             let errorHtml = '<table class="error-table"><tr><th>点号</th><th>误差 (m)</th></tr>';
             data.errors.forEach((err, idx) => {
                 errorHtml += `<tr><td>点 ${idx + 1}</td><td>${err.toFixed(6)}</td></tr>`;
@@ -256,5 +503,6 @@
             document.getElementById('error_details').innerHTML = errorHtml;
         }
     </script>
+    <script type="module" src="{{ url_for('static', filename='pcd_calib.js') }}"></script>
 </body>
 </html>

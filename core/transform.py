@@ -7,6 +7,7 @@
 import numpy as np
 import math
 import ast
+import re
 
 WGS84_PI = math.pi
 WGS84_LongAxis = 6378137.0  # 地球椭球体的长半轴（单位：米）
@@ -14,14 +15,14 @@ WGS84_e = 0.0818191908426215  # 地球椭球体的第一离心率
 
 def parse_transform_matrix(matrix_str):
     """
-    解析转换矩阵字符串
+    解析转换矩阵字符串，支持 Python 列表格式与空格分隔的 NumPy 打印格式
 
     Args:
-        matrix_str: numpy格式的矩阵字符串，如:
-            [[ 6.73e-01 -3.69e-02  7.38e-01  1.40e+04]
-             [ 5.90e-01  6.27e-01 -5.07e-01 -9.53e+03]
-             [-4.44e-01  7.77e-01  4.44e-01 -6.37e+06]
-             [ 0.00e+00  0.00e+00  0.00e+00  1.00e+00]]
+        matrix_str: 4x4 矩阵字符串，如:
+            [[ 6.73e-01, -3.69e-02,  7.38e-01,  1.40e+04],
+             [ 5.90e-01,  6.27e-01, -5.07e-01, -9.53e+03],
+             [-4.44e-01,  7.77e-01,  4.44e-01, -6.37e+06],
+             [ 0.00e+00,  0.00e+00,  0.00e+00,  1.00e+00]]
 
     Returns:
         4x4 numpy数组
@@ -29,17 +30,38 @@ def parse_transform_matrix(matrix_str):
     if not matrix_str or matrix_str.strip() == '':
         return np.eye(4)
 
+    s = matrix_str.strip()
     try:
-        # 使用ast.literal_eval解析字符串
-        matrix_list = ast.literal_eval(matrix_str.strip())
+        try:
+            matrix_list = ast.literal_eval(s)
+        except (ValueError, SyntaxError):
+            # 兼容空格分隔的 NumPy 打印格式，例如 [[1 0 0 0]\n [0 1 0 0] ...]
+            row_matches = re.findall(r'\[([^\[\]]+)\]', s)
+            if len(row_matches) == 4:
+                matrix_list = [
+                    [float(tok) for tok in row.replace(',', ' ').split()]
+                    for row in row_matches
+                ]
+            else:
+                tokens = s.replace('[', ' ').replace(']', ' ').replace(',', ' ').split()
+                if len(tokens) != 16:
+                    raise ValueError(f"无法提取 16 个矩阵元素，当前提取到 {len(tokens)} 个")
+                vals = [float(tok) for tok in tokens]
+                matrix_list = [vals[i * 4:(i + 1) * 4] for i in range(4)]
+
         matrix = np.array(matrix_list, dtype=float)
 
         if matrix.shape != (4, 4):
             raise ValueError(f"矩阵形状必须是4x4，当前是{matrix.shape}")
+        if not np.all(np.isfinite(matrix)):
+            raise ValueError("矩阵包含无效数值 (NaN 或 Inf)")
 
         return matrix
     except Exception as e:
-        raise ValueError(f"无法解析转换矩阵: {str(e)}\n请确保格式正确，例如:\n[[1 0 0 0]\n [0 1 0 0]\n [0 0 1 0]\n [0 0 0 1]]")
+        raise ValueError(
+            f"无法解析转换矩阵: {str(e)}\n请确保格式正确（支持 Python 列表或 NumPy 打印格式），例如:\n"
+            "[[1, 0, 0, 0],\n [0, 1, 0, 0],\n [0, 0, 1, 0],\n [0, 0, 0, 1]]"
+        )
 
 
 def transform_blh_to_ecef(B, L, H):
@@ -224,13 +246,18 @@ def compute_local_axis_matrix(P0_blh, Px_blh, Py_blh, Pz_blh, undo=11.9):
         T_inv: 4x4 齐次变换矩阵 (WGS84 ECEF → 泊位局部坐标)
     """
     # BLH → ECEF
-    P0 = np.array(transform_blh_to_ecef(P0_blh[0], P0_blh[1], P0_blh[2] + undo))
-    Px = np.array(transform_blh_to_ecef(Px_blh[0], Px_blh[1], Px_blh[2] + undo))
-    Py = np.array(transform_blh_to_ecef(Py_blh[0], Py_blh[1], Py_blh[2] + undo))
-    Pz = np.array(transform_blh_to_ecef(Pz_blh[0], Pz_blh[1], Pz_blh[2] + undo))
+    p0 = transform_blh_to_ecef(P0_blh[0], P0_blh[1], P0_blh[2] + undo)
+    px = transform_blh_to_ecef(Px_blh[0], Px_blh[1], Px_blh[2] + undo)
+    py = transform_blh_to_ecef(Py_blh[0], Py_blh[1], Py_blh[2] + undo)
+    pz = transform_blh_to_ecef(Pz_blh[0], Pz_blh[1], Pz_blh[2] + undo)
 
-    if P0 is None or Px is None or Py is None or Pz is None:
+    if any(p is None for p in (p0, px, py, pz)):
         raise ValueError("无效的经纬度数据")
+
+    P0 = np.array(p0, dtype=float)
+    Px = np.array(px, dtype=float)
+    Py = np.array(py, dtype=float)
+    Pz = np.array(pz, dtype=float)
 
     # 构建局部坐标系轴（以 Px 为参考点）
     vec_z = Pz - Px
@@ -238,10 +265,16 @@ def compute_local_axis_matrix(P0_blh, Px_blh, Py_blh, Pz_blh, undo=11.9):
     vec_x = np.cross(vec_y, vec_z)
     vec_z = np.cross(vec_x, vec_y)
 
+    norm_x = np.linalg.norm(vec_x)
+    norm_y = np.linalg.norm(vec_y)
+    norm_z = np.linalg.norm(vec_z)
+    if norm_x < 1e-12 or norm_y < 1e-12 or norm_z < 1e-12:
+        raise ValueError("参考点共线或重合，无法构建正交泊位坐标系")
+
     # 归一化
-    vec_x_norm = vec_x / np.linalg.norm(vec_x)
-    vec_y_norm = vec_y / np.linalg.norm(vec_y)
-    vec_z_norm = vec_z / np.linalg.norm(vec_z)
+    vec_x_norm = vec_x / norm_x
+    vec_y_norm = vec_y / norm_y
+    vec_z_norm = vec_z / norm_z
 
     # 构建 WGS84 ECEF → 局部坐标的变换矩阵
     T = np.array([

@@ -161,12 +161,12 @@
             matrixHtml += '</table>';
             document.getElementById('matrix_result').innerHTML = matrixHtml;
 
-            // numpy 格式（可直接复制）
+            // numpy 格式（保留完整双精度，避免 ECEF 转换出现截断误差）
             let numpyStr = '[';
             for (let i = 0; i < 4; i++) {
                 numpyStr += '[';
                 for (let j = 0; j < 4; j++) {
-                    numpyStr += matrix[i][j].toFixed(6);
+                    numpyStr += String(matrix[i][j]);
                     if (j < 3) numpyStr += ', ';
                 }
                 numpyStr += ']';

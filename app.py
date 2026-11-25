@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from core.parser import parse_coordinate_file, parse_wgs84_file
 from core.transform import transform_to_rot_center, transform_to_arm, transform_to_chute, parse_transform_matrix, transform_blh_array_to_ecef, transform_ecef_to_local, compute_local_axis_matrix
-from core.solver import estimate_rigid_transform, compute_error
+from core.solver import estimate_rigid_transform, compute_error, iterative_rigid_transform
 from core.calibrator import compute_posture_params
 
 
@@ -243,6 +243,157 @@ def calculate():
 
     except Exception as e:
         return jsonify({'error': str(e)})
+
+
+def _parse_finite_float(value, field_name):
+    """解析并校验有限浮点数"""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"参数 {field_name} 必须为有效数字")
+    if not np.isfinite(num):
+        raise ValueError(f"参数 {field_name} 不能为 NaN 或 Inf")
+    return num
+
+
+def _parse_vec3(values, field_name):
+    """解析并校验三维坐标数组"""
+    if not isinstance(values, (list, tuple)) or len(values) != 3:
+        raise ValueError(f"参数 {field_name} 必须为长度为 3 的数组")
+    return [_parse_finite_float(v, f"{field_name}[{i}]") for i, v in enumerate(values)]
+
+
+@app.route('/calculate_points', methods=['POST'])
+def calculate_points():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': '请求体必须为 JSON 格式'}), 400
+
+    try:
+        raw_points = payload.get('points')
+        if not isinstance(raw_points, list) or len(raw_points) == 0:
+            return jsonify({'error': '请至少添加一组标定点'}), 400
+
+        error_threshold = _parse_finite_float(payload.get('error_threshold', 0.1), 'error_threshold')
+        if error_threshold <= 0:
+            return jsonify({'error': '允许最大误差阈值必须大于 0'}), 400
+
+        try:
+            min_points = int(payload.get('min_points', 3))
+        except (TypeError, ValueError):
+            return jsonify({'error': '最少保留点数必须为整数'}), 400
+        if min_points < 3:
+            return jsonify({'error': '最少保留点数不能少于 3'}), 400
+
+        if len(raw_points) < min_points:
+            return jsonify({'error': f'有效标定点不足：至少需要 {min_points} 组，当前仅 {len(raw_points)} 组'}), 400
+
+        undo = _parse_finite_float(payload.get('undo', 11.9), 'undo')
+
+        matrix_str = payload.get('transform_matrix', '')
+        if not isinstance(matrix_str, str) or not matrix_str.strip():
+            return jsonify({'error': '请输入 WGS84 到泊位坐标系的 4×4 转换矩阵'}), 400
+        transform_matrix = parse_transform_matrix(matrix_str)
+
+        coord_system = payload.get('coord_system', 'rot_center')
+        raw_params = payload.get('params')
+        if not isinstance(raw_params, dict):
+            return jsonify({'error': '缺少大机姿态参数 params'}), 400
+
+        params = {
+            'slewing_angle': _parse_finite_float(raw_params.get('slewing_angle'), 'slewing_angle'),
+            'luffing_angle': _parse_finite_float(raw_params.get('luffing_angle'), 'luffing_angle'),
+            'rot_center': np.array(_parse_vec3(raw_params.get('rot_center'), 'rot_center'), dtype=float),
+            'arm_length': _parse_finite_float(raw_params.get('arm_length', 25.3), 'arm_length'),
+            'stretch_dist': _parse_finite_float(raw_params.get('stretch_dist', 0.0), 'stretch_dist'),
+            'arm_to_connect_point_dist': _parse_finite_float(
+                raw_params.get('connect_dist', raw_params.get('arm_to_connect_point_dist', 0.0)),
+                'connect_dist'
+            ),
+        }
+
+        point_ids = []
+        radar_list = []
+        blh_list = []
+        for idx, item in enumerate(raw_points):
+            if not isinstance(item, dict):
+                raise ValueError(f"第 {idx + 1} 组标定点格式错误")
+            pid = item.get('id', idx + 1)
+            radar_xyz = _parse_vec3(item.get('radar'), f"第 {pid} 组雷达坐标")
+            blh_xyz = _parse_vec3(item.get('blh'), f"第 {pid} 组经纬度海拔")
+            point_ids.append(pid)
+            radar_list.append(radar_xyz)
+            blh_list.append(blh_xyz)
+
+        radar_points = np.array(radar_list, dtype=float)
+        blh_points = np.array(blh_list, dtype=float)
+
+        # BLH -> ECEF -> 泊位局部坐标系
+        ecef_points = transform_blh_array_to_ecef(blh_points, undo)
+        gnss_local = transform_ecef_to_local(ecef_points, transform_matrix)
+
+        if coord_system == 'rot_center':
+            gnss_transformed = transform_to_rot_center(gnss_local, params)
+        elif coord_system == 'arm':
+            gnss_transformed = transform_to_arm(gnss_local, params)
+        elif coord_system == 'chute':
+            gnss_transformed = transform_to_chute(gnss_local, params)
+        else:
+            return jsonify({'error': '无效的坐标系选择'}), 400
+
+        result = iterative_rigid_transform(
+            radar_points,
+            gnss_transformed,
+            error_threshold=error_threshold,
+            min_points=min_points
+        )
+
+        removed_round_map = {item['index']: item['round'] for item in result['removed']}
+        kept_set = set(result['kept_indices'])
+
+        point_results = []
+        for idx in range(len(raw_points)):
+            point_results.append({
+                'id': point_ids[idx],
+                'index': idx,
+                'status': 'kept' if idx in kept_set else 'removed',
+                'error': float(result['all_errors'][idx]),
+                'removed_round': removed_round_map.get(idx),
+                'radar': radar_list[idx],
+                'blh': blh_list[idx],
+            })
+
+        iterations_out = []
+        for step in result['iterations']:
+            rm_idx = step['removed_index']
+            iterations_out.append({
+                'round': step['round'],
+                'active_count': step['active_count'],
+                'mean_error': step['mean_error'],
+                'max_error': step['max_error'],
+                'removed_index': rm_idx,
+                'removed_id': point_ids[rm_idx] if rm_idx is not None else None,
+                'removed_error': step['removed_error'],
+            })
+
+        return jsonify({
+            'success': True,
+            'converged': result['converged'],
+            'usable': result['converged'],
+            'message': result['message'],
+            'matrix': result['matrix'].tolist(),
+            'mean_error': result['mean_error'],
+            'max_error': result['max_error'],
+            'kept_count': len(result['kept_indices']),
+            'total_count': len(raw_points),
+            'error_threshold': result['error_threshold'],
+            'min_points': result['min_points'],
+            'point_results': point_results,
+            'iterations': iterations_out,
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 if __name__ == '__main__':
